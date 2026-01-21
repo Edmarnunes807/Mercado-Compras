@@ -73,6 +73,12 @@
                         </div>
                     </div>
                 </div>
+                
+                <div class="status" id="status">
+                    <i class="fas fa-check-circle"></i> Sistema pronto
+                </div>
+                
+                <div class="result" id="result"></div>
             </div>
             
             <!-- Página: Carrinho -->
@@ -85,10 +91,6 @@
                 </div>
                 <div id="cartContent">
                     <!-- Carrinho será carregado aqui -->
-                    <div class="loading-state">
-                        <div class="loading"></div>
-                        <p>Carregando carrinho...</p>
-                    </div>
                 </div>
             </div>
             
@@ -102,10 +104,6 @@
                 </div>
                 <div id="historyContent">
                     <!-- Histórico será carregado aqui -->
-                    <div class="loading-state">
-                        <div class="loading"></div>
-                        <p>Carregando histórico...</p>
-                    </div>
                 </div>
             </div>
             
@@ -119,18 +117,8 @@
                 </div>
                 <div id="productsContent">
                     <!-- Produtos serão carregados aqui -->
-                    <div class="loading-state">
-                        <div class="loading"></div>
-                        <p>Carregando produtos...</p>
-                    </div>
                 </div>
             </div>
-            
-            <div class="status" id="status">
-                <i class="fas fa-check-circle"></i> Sistema pronto
-            </div>
-            
-            <div class="result" id="result"></div>
         </div>
         
         <div class="footer">
@@ -167,6 +155,13 @@
                     <div id="priceVariationInfo">
                         Variação: <span id="variationAmount">0.00</span>
                     </div>
+                </div>
+                
+                <div class="form-group" id="saveToDatabaseOption" style="display: none;">
+                    <label style="color: var(--warning);">
+                        <input type="checkbox" id="saveProductToDb" checked>
+                        <i class="fas fa-database"></i> Salvar produto no banco de dados
+                    </label>
                 </div>
             </div>
             <div class="modal-footer">
