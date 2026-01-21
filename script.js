@@ -10,6 +10,7 @@ let lastScanned = '';
 let lastScanTime = 0;
 let currentProduct = null;
 let currentModalType = 'edit';
+let isLoading = false;
 
 const REAR_CAMERA_KEYWORDS = ["back", "rear", "environment", "traseira", "camera 0"];
 
@@ -21,17 +22,17 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.getElementById('saveEditBtn').addEventListener('click', saveEditedProduct);
     
-    // Atualizar variação de preço em tempo real
     document.getElementById('cartCurrentPrice').addEventListener('input', updatePriceVariation);
     
     checkAPIStatus();
     
-    // Carregar informações do carrinho
-    setTimeout(() => updateCartInfo(), 1000);
+    updateCartInfo();
 });
 
 // ========== FUNÇÕES DE NAVEGAÇÃO ==========
 function showPage(pageId) {
+    if (isLoading) return;
+    
     // Atualizar botões de navegação
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.remove('active');
@@ -46,6 +47,12 @@ function showPage(pageId) {
     });
     
     document.getElementById(`page-${pageId}`).classList.add('active');
+    
+    // Limpar resultados anteriores
+    if (pageId !== 'scanner') {
+        document.getElementById('result').innerHTML = '';
+        document.getElementById('result').classList.remove('active');
+    }
     
     // Carregar conteúdo da página
     switch(pageId) {
@@ -63,7 +70,7 @@ function showPage(pageId) {
 
 // ========== FUNÇÕES DO SCANNER ==========
 async function initScanner() {
-    if (isScanning) return;
+    if (isScanning || isLoading) return;
     
     try {
         updateStatus('Iniciando câmera...', 'scanning');
@@ -294,7 +301,7 @@ function onScanSuccess(decodedText, decodedResult) {
     searchProduct(code);
 }
 
-// ========== FLUXO DE BUSCA ==========
+// ========== FLUXO DE BUSCA OTIMIZADO ==========
 async function searchProduct(code) {
     if (!code || !isValidBarcode(code)) {
         showAlert('Código EAN inválido. Use 8-13 dígitos.', 'error');
@@ -303,35 +310,43 @@ async function searchProduct(code) {
     
     clearResult();
     updateStatus(`Buscando produto ${code}...`, 'scanning');
+    isLoading = true;
     
     try {
+        // 1º PASSO: Buscar no Banco Local (Google Sheets) - SEMPRE PRIMEIRO
         const localResult = await searchInGoogleSheets(code);
         
         if (localResult && localResult.success && localResult.found) {
             currentProduct = localResult.product;
             showProductInfo(localResult.product, true);
             updateStatus(`✅ Encontrado no banco local`, 'success');
+            isLoading = false;
             return;
         }
         
+        // 2º PASSO: Se não encontrou no banco local, buscar no Open Food Facts
         updateStatus('Não encontrado localmente. Buscando no Open Food Facts...', 'scanning');
         const openFoodProduct = await searchOpenFoodFacts(code);
         
         if (openFoodProduct && openFoodProduct.name) {
             showExternalProductInfo(openFoodProduct, code, 'Open Food Facts');
             updateStatus(`✅ Encontrado no Open Food Facts`, 'success');
+            isLoading = false;
             return;
         }
         
+        // 3º PASSO: Se não encontrou no Open Food Facts, buscar no Bluesoft
         updateStatus('Não encontrado no Open Food Facts. Buscando no Bluesoft...', 'scanning');
         const bluesoftProduct = await searchBluesoftCosmos(code);
         
         if (bluesoftProduct && bluesoftProduct.name) {
             showExternalProductInfo(bluesoftProduct, code, 'Bluesoft Cosmos');
             updateStatus(`✅ Encontrado no Bluesoft Cosmos`, 'success');
+            isLoading = false;
             return;
         }
         
+        // 4º PASSO: Se não encontrou em nenhuma fonte, mostrar formulário para cadastrar
         updateStatus('❌ Produto não encontrado em nenhuma fonte', 'error');
         showAddToDatabaseForm(code);
         
@@ -339,6 +354,8 @@ async function searchProduct(code) {
         console.error('Erro no fluxo de busca:', error);
         updateStatus('Erro na busca. Tente novamente.', 'error');
         showErrorResult('Erro na busca', 'Ocorreu um erro ao buscar o produto.');
+    } finally {
+        isLoading = false;
     }
 }
 
@@ -530,227 +547,6 @@ async function searchBluesoftCosmos(code) {
     }
 }
 
-// ========== DISPLAY FUNCTIONS ==========
-function showProductInfo(product, isFromDatabase = true) {
-    const resultDiv = document.getElementById('result');
-    
-    let imageHtml = '';
-    if (product.imagem) {
-        imageHtml = `
-            <div class="product-image-container">
-                <img src="${product.imagem}" 
-                     class="product-image" 
-                     alt="${product.nome}"
-                     onerror="handleImageError(this)">
-            </div>
-        `;
-    } else {
-        imageHtml = `
-            <div class="product-image-container">
-                <div class="no-image">
-                    <i class="fas fa-image"></i>
-                    <span>Sem imagem</span>
-                </div>
-            </div>
-        `;
-    }
-    
-    let sourceBadge = isFromDatabase ? 
-        '<span class="db-badge">BANCO LOCAL</span>' : 
-        '<span class="db-missing">EXTERNO</span>';
-    
-    let priceHtml = '';
-    if (product.preco) {
-        priceHtml = `
-            <div class="product-price">
-                <i class="fas fa-money-bill-wave"></i> R$ ${product.preco}
-            </div>
-        `;
-    }
-    
-    resultDiv.innerHTML = `
-        <div class="product-card">
-            ${imageHtml}
-            
-            <div class="product-details">
-                <div class="product-code">
-                    <i class="fas fa-barcode"></i> EAN: ${product.ean}
-                </div>
-                
-                <div class="product-title">${product.nome}</div>
-                
-                ${product.marca ? `
-                <div class="product-brand">
-                    <i class="fas fa-industry"></i> ${product.marca}
-                </div>
-                ` : ''}
-                
-                ${priceHtml}
-                
-                ${product.cadastro ? `
-                <div class="product-meta">
-                    <i class="fas fa-calendar"></i> Cadastro: ${product.cadastro}
-                </div>
-                ` : ''}
-                
-                <div class="source-badge">
-                    <i class="fas fa-database"></i> ${sourceBadge}
-                </div>
-            </div>
-        </div>
-        
-        <div class="action-buttons">
-            ${isFromDatabase ? `
-            <button class="btn btn-success" onclick="openAddToCartModal(${JSON.stringify(product)})">
-                <i class="fas fa-cart-plus"></i> Adicionar ao Carrinho
-            </button>
-            <button class="btn btn-warning" onclick="openEditModal('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', '${product.linha || ''}')">
-                <i class="fas fa-edit"></i> Editar
-            </button>
-            <button class="btn btn-danger" onclick="deleteProduct('${product.ean}', '${product.linha || ''}')">
-                <i class="fas fa-trash"></i> Excluir
-            </button>
-            ` : `
-            <button class="btn btn-success" onclick="saveExternalProductToDatabase('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', 'Banco Local')">
-                <i class="fas fa-save"></i> Salvar no Banco
-            </button>
-            `}
-            <button class="btn btn-secondary" onclick="searchOnline('${product.ean}', '${encodeURIComponent(product.nome)}')">
-                <i class="fas fa-globe"></i> Pesquisar Online
-            </button>
-        </div>
-    `;
-    
-    resultDiv.classList.add('active');
-}
-
-function showExternalProductInfo(product, code, source) {
-    const resultDiv = document.getElementById('result');
-    
-    let imageHtml = '';
-    if (product.image) {
-        imageHtml = `
-            <div class="product-image-container">
-                <img src="${product.image}" 
-                     class="product-image" 
-                     alt="${product.name}"
-                     onerror="handleImageError(this)">
-            </div>
-        `;
-    } else {
-        imageHtml = `
-            <div class="product-image-container">
-                <div class="no-image">
-                    <i class="fas fa-image"></i>
-                    <span>Sem imagem</span>
-                </div>
-            </div>
-        `;
-    }
-    
-    let priceHtml = '';
-    if (product.price) {
-        priceHtml = `
-            <div class="product-price">
-                <i class="fas fa-money-bill-wave"></i> ${product.price}
-            </div>
-        `;
-    }
-    
-    resultDiv.innerHTML = `
-        <div class="product-card">
-            ${imageHtml}
-            
-            <div class="product-details">
-                <div class="product-code">
-                    <i class="fas fa-barcode"></i> EAN: ${code}
-                </div>
-                
-                <div class="product-title">${product.name}</div>
-                
-                ${product.brand ? `
-                <div class="product-brand">
-                    <i class="fas fa-industry"></i> ${product.brand}
-                </div>
-                ` : ''}
-                
-                ${priceHtml}
-                
-                <div class="source-badge">
-                    <i class="fas fa-external-link-alt"></i> Fonte: ${source} <span class="db-missing">EXTERNO</span>
-                </div>
-            </div>
-        </div>
-        
-        <div class="action-buttons">
-            <button class="btn btn-success" onclick="saveExternalProductToDatabase('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
-                <i class="fas fa-save"></i> Salvar no Banco
-            </button>
-            <button class="btn btn-warning" onclick="openEditModalForNewProduct('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
-                <i class="fas fa-edit"></i> Editar antes de Salvar
-            </button>
-            <button class="btn btn-secondary" onclick="searchOnline('${code}', '${encodeURIComponent(product.name)}')">
-                <i class="fas fa-globe"></i> Pesquisar Online
-            </button>
-        </div>
-    `;
-    
-    resultDiv.classList.add('active');
-}
-
-function showAddToDatabaseForm(code) {
-    const resultDiv = document.getElementById('result');
-    
-    resultDiv.innerHTML = `
-        <div class="no-results">
-            <div class="no-results-icon">
-                <i class="fas fa-plus-circle"></i>
-            </div>
-            <h3>Produto não encontrado</h3>
-            <p>
-                Código: <strong>${code}</strong><br>
-                O produto não foi encontrado em nenhuma fonte.
-            </p>
-            
-            <div class="action-buttons">
-                <button class="btn btn-success" onclick="openManualAddModal('${code}')">
-                    <i class="fas fa-plus"></i> Cadastrar Manualmente
-                </button>
-                <button class="btn btn-secondary" onclick="searchOnline('${code}')">
-                    <i class="fas fa-globe"></i> Pesquisar na Web
-                </button>
-            </div>
-        </div>
-    `;
-    
-    resultDiv.classList.add('active');
-}
-
-function showErrorResult(title, message) {
-    const resultDiv = document.getElementById('result');
-    
-    resultDiv.innerHTML = `
-        <div class="no-results">
-            <div class="no-results-icon">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <h3>${title}</h3>
-            <p>${message}</p>
-            <button class="btn btn-secondary" onclick="searchManual()">
-                <i class="fas fa-redo"></i> Tentar novamente
-            </button>
-        </div>
-    `;
-    
-    resultDiv.classList.add('active');
-}
-
-function clearResult() {
-    const resultDiv = document.getElementById('result');
-    resultDiv.innerHTML = '';
-    resultDiv.classList.remove('active');
-}
-
 // ========== SHOPPING CART FUNCTIONS ==========
 async function getCartInfo() {
     try {
@@ -764,7 +560,7 @@ async function getCartInfo() {
         return await response.json();
     } catch (error) {
         console.error('Erro ao buscar carrinho:', error);
-        return null;
+        return { success: false, error: error.message };
     }
 }
 
@@ -772,48 +568,55 @@ async function updateCartInfo() {
     const cartInfo = document.getElementById('cartInfo');
     if (!cartInfo) return;
     
-    const cart = await getCartInfo();
-    
-    if (cart && cart.success) {
-        if (cart.total > 0) {
-            cartInfo.innerHTML = `
-                <div class="cart-info">
-                    <div class="cart-info-left">
-                        <div class="cart-info-item">
-                            <i class="fas fa-shopping-cart"></i>
-                            <span class="cart-info-value">${cart.total} itens</span>
+    try {
+        const cart = await getCartInfo();
+        
+        if (cart && cart.success) {
+            if (cart.total > 0) {
+                cartInfo.innerHTML = `
+                    <div class="cart-info">
+                        <div class="cart-info-left">
+                            <div class="cart-info-item">
+                                <i class="fas fa-shopping-cart"></i>
+                                <span class="cart-info-value">${cart.total} itens</span>
+                            </div>
+                            <div class="cart-info-item">
+                                <i class="fas fa-money-bill-wave"></i>
+                                <span class="cart-info-value">R$ ${cart.subtotal}</span>
+                            </div>
+                            ${cart.economia > 0 ? `
+                            <div class="cart-info-item">
+                                <i class="fas fa-piggy-bank"></i>
+                                <span class="cart-info-value">R$ ${cart.economia}</span>
+                            </div>
+                            ` : ''}
                         </div>
-                        <div class="cart-info-item">
-                            <i class="fas fa-money-bill-wave"></i>
-                            <span class="cart-info-value">R$ ${cart.subtotal}</span>
+                        <div class="cart-info-actions">
+                            <button class="btn-small btn-success" onclick="loadCart()">
+                                <i class="fas fa-eye"></i> Ver
+                            </button>
+                            <button class="btn-small btn-danger" onclick="clearCart()">
+                                <i class="fas fa-trash"></i> Limpar
+                            </button>
                         </div>
-                        ${cart.economia > 0 ? `
-                        <div class="cart-info-item">
-                            <i class="fas fa-piggy-bank"></i>
-                            <span class="cart-info-value">R$ ${cart.economia}</span>
-                        </div>
-                        ` : ''}
                     </div>
-                    <div class="cart-info-actions">
-                        <button class="btn-small btn-success" onclick="loadCart()">
-                            <i class="fas fa-eye"></i> Ver
-                        </button>
-                        <button class="btn-small btn-danger" onclick="clearCart()">
-                            <i class="fas fa-trash"></i> Limpar
-                        </button>
-                    </div>
-                </div>
-            `;
-            cartInfo.classList.remove('hidden');
+                `;
+                cartInfo.classList.remove('hidden');
+            } else {
+                cartInfo.classList.add('hidden');
+            }
         } else {
             cartInfo.classList.add('hidden');
         }
-    } else {
+    } catch (error) {
+        console.error('Erro ao atualizar informações do carrinho:', error);
         cartInfo.classList.add('hidden');
     }
 }
 
 async function loadCart() {
+    if (isLoading) return;
+    
     showPage('compras');
     
     const cartContent = document.getElementById('cartContent');
@@ -824,9 +627,124 @@ async function loadCart() {
         </div>
     `;
     
-    const cart = await getCartInfo();
+    isLoading = true;
     
-    if (!cart || !cart.success) {
+    try {
+        const cart = await getCartInfo();
+        
+        if (!cart || !cart.success) {
+            cartContent.innerHTML = `
+                <div class="no-results">
+                    <div class="no-results-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h3>Erro ao carregar carrinho</h3>
+                    <p>${cart?.error || 'Tente novamente mais tarde.'}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        if (cart.total === 0) {
+            cartContent.innerHTML = `
+                <div class="no-results">
+                    <div class="no-results-icon">
+                        <i class="fas fa-shopping-cart"></i>
+                    </div>
+                    <h3>Carrinho vazio</h3>
+                    <p>Adicione produtos ao carrinho para vê-los aqui.</p>
+                    <button class="btn btn-primary" onclick="showPage('scanner')">
+                        <i class="fas fa-barcode"></i> Escanear Produtos
+                    </button>
+                </div>
+            `;
+            return;
+        }
+        
+        let cartHtml = `
+            <div class="cart-items-container">
+        `;
+        
+        cart.items.forEach(item => {
+            const variacaoColor = item.variacao < 0 ? 'success' : (item.variacao > 0 ? 'danger' : 'secondary');
+            const variacaoIcon = item.variacao < 0 ? 'arrow-down' : (item.variacao > 0 ? 'arrow-up' : 'minus');
+            
+            cartHtml += `
+                <div class="cart-item">
+                    <div class="cart-item-image">
+                        ${item.imagem ? 
+                            `<img src="${item.imagem}" alt="${item.nome}" onerror="handleImageError(this)">` : 
+                            `<div class="no-image-small"><i class="fas fa-image"></i></div>`
+                        }
+                    </div>
+                    <div class="cart-item-info">
+                        <div class="cart-item-name">${item.nome}</div>
+                        <div class="cart-item-details">
+                            <span class="cart-item-ean">EAN: ${item.ean}</span>
+                            <span class="cart-item-brand">${item.marca || 'Sem marca'}</span>
+                        </div>
+                    </div>
+                    <div class="cart-item-prices">
+                        <div class="cart-price-old">R$ ${item.preco_antigo.toFixed(2)}</div>
+                        <div class="cart-price-current">R$ ${item.preco_atual.toFixed(2)}</div>
+                        <div class="cart-price-variation ${variacaoColor}">
+                            <i class="fas fa-${variacaoIcon}"></i> R$ ${Math.abs(item.variacao).toFixed(2)}
+                        </div>
+                    </div>
+                    <div class="cart-item-actions">
+                        <button class="btn-small btn-danger" onclick="removeFromCart('${item.ean}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+        
+        cartHtml += `</div>`;
+        
+        // Summary
+        cartHtml += `
+            <div class="cart-summary">
+                <div class="summary-row">
+                    <span>Total de Itens:</span>
+                    <span class="summary-value">${cart.total}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Valor Anterior Total:</span>
+                    <span class="summary-value">R$ ${cart.preco_antigo_total}</span>
+                </div>
+                <div class="summary-row total">
+                    <span>Valor Atual Total:</span>
+                    <span class="summary-value total">R$ ${cart.subtotal}</span>
+                </div>
+                <div class="summary-row">
+                    <span>Variação Total:</span>
+                    <span class="summary-value ${cart.variacao_total < 0 ? 'success' : (cart.variacao_total > 0 ? 'danger' : 'secondary')}">
+                        R$ ${Math.abs(cart.variacao_total).toFixed(2)}
+                    </span>
+                </div>
+                ${cart.economia > 0 ? `
+                <div class="summary-row economy">
+                    <span><i class="fas fa-piggy-bank"></i> Economia Total:</span>
+                    <span class="summary-value success">R$ ${cart.economia}</span>
+                </div>
+                ` : ''}
+            </div>
+            
+            <div class="cart-actions">
+                <button class="btn btn-success" onclick="checkout()">
+                    <i class="fas fa-check-circle"></i> Finalizar Compra
+                </button>
+                <button class="btn btn-danger" onclick="clearCart()">
+                    <i class="fas fa-trash"></i> Limpar Carrinho
+                </button>
+            </div>
+        `;
+        
+        cartContent.innerHTML = cartHtml;
+        
+    } catch (error) {
+        console.error('Erro ao carregar carrinho:', error);
         cartContent.innerHTML = `
             <div class="no-results">
                 <div class="no-results-icon">
@@ -836,106 +754,35 @@ async function loadCart() {
                 <p>Tente novamente mais tarde.</p>
             </div>
         `;
-        return;
+    } finally {
+        isLoading = false;
     }
-    
-    if (cart.total === 0) {
-        cartContent.innerHTML = `
-            <div class="no-results">
-                <div class="no-results-icon">
-                    <i class="fas fa-shopping-cart"></i>
-                </div>
-                <h3>Carrinho vazio</h3>
-                <p>Adicione produtos ao carrinho para vê-los aqui.</p>
-                <button class="btn btn-primary" onclick="showPage('scanner')">
-                    <i class="fas fa-barcode"></i> Escanear Produtos
-                </button>
-            </div>
-        `;
-        return;
+}
+
+async function addToCartFromAPI(ean, preco_atual, preco_antigo = null) {
+    try {
+        const params = new URLSearchParams({
+            operation: 'addToCart',
+            ean: ean,
+            preco_atual: preco_atual
+        });
+        
+        if (preco_antigo) {
+            params.append('preco_antigo', preco_antigo);
+        }
+        
+        const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Erro ao adicionar ao carrinho:', error);
+        return { success: false, error: error.message };
     }
-    
-    let cartHtml = `
-        <div class="cart-items-container">
-    `;
-    
-    cart.items.forEach(item => {
-        const variacaoColor = item.variacao < 0 ? 'success' : (item.variacao > 0 ? 'danger' : 'secondary');
-        const variacaoIcon = item.variacao < 0 ? 'arrow-down' : (item.variacao > 0 ? 'arrow-up' : 'minus');
-        
-        cartHtml += `
-            <div class="cart-item">
-                <div class="cart-item-image">
-                    ${item.imagem ? 
-                        `<img src="${item.imagem}" alt="${item.nome}" onerror="handleImageError(this)">` : 
-                        `<div class="no-image-small"><i class="fas fa-image"></i></div>`
-                    }
-                </div>
-                <div class="cart-item-info">
-                    <div class="cart-item-name">${item.nome}</div>
-                    <div class="cart-item-details">
-                        <span class="cart-item-ean">EAN: ${item.ean}</span>
-                        <span class="cart-item-brand">${item.marca || 'Sem marca'}</span>
-                    </div>
-                </div>
-                <div class="cart-item-prices">
-                    <div class="cart-price-old">R$ ${item.preco_antigo.toFixed(2)}</div>
-                    <div class="cart-price-current">R$ ${item.preco_atual.toFixed(2)}</div>
-                    <div class="cart-price-variation ${variacaoColor}">
-                        <i class="fas fa-${variacaoIcon}"></i> R$ ${Math.abs(item.variacao).toFixed(2)}
-                    </div>
-                </div>
-                <div class="cart-item-actions">
-                    <button class="btn-small btn-danger" onclick="removeFromCart('${item.ean}')">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-    });
-    
-    cartHtml += `</div>`;
-    
-    // Summary
-    cartHtml += `
-        <div class="cart-summary">
-            <div class="summary-row">
-                <span>Total de Itens:</span>
-                <span class="summary-value">${cart.total}</span>
-            </div>
-            <div class="summary-row">
-                <span>Valor Anterior Total:</span>
-                <span class="summary-value">R$ ${cart.preco_antigo_total}</span>
-            </div>
-            <div class="summary-row total">
-                <span>Valor Atual Total:</span>
-                <span class="summary-value total">R$ ${cart.subtotal}</span>
-            </div>
-            <div class="summary-row">
-                <span>Variação Total:</span>
-                <span class="summary-value ${cart.variacao_total < 0 ? 'success' : (cart.variacao_total > 0 ? 'danger' : 'secondary')}">
-                    R$ ${Math.abs(cart.variacao_total).toFixed(2)}
-                </span>
-            </div>
-            ${cart.economia > 0 ? `
-            <div class="summary-row economy">
-                <span><i class="fas fa-piggy-bank"></i> Economia Total:</span>
-                <span class="summary-value success">R$ ${cart.economia}</span>
-            </div>
-            ` : ''}
-        </div>
-        
-        <div class="cart-actions">
-            <button class="btn btn-success" onclick="checkout()">
-                <i class="fas fa-check-circle"></i> Finalizar Compra
-            </button>
-            <button class="btn btn-danger" onclick="clearCart()">
-                <i class="fas fa-trash"></i> Limpar Carrinho
-            </button>
-        </div>
-    `;
-    
-    cartContent.innerHTML = cartHtml;
 }
 
 async function removeFromCart(ean) {
@@ -1070,14 +917,30 @@ function showCheckoutReceipt(result) {
 }
 
 // ========== ADD TO CART MODAL ==========
-function openAddToCartModal(product) {
+function openAddToCartModal(product, isFromDatabase = true) {
     currentProduct = product;
     
-    document.getElementById('cartProductName').textContent = product.nome;
+    document.getElementById('cartProductName').textContent = product.nome || product.name;
     document.getElementById('cartProductEAN').textContent = product.ean;
-    document.getElementById('cartOldPrice').value = product.preco ? `R$ ${product.preco}` : 'N/A';
-    document.getElementById('cartCurrentPrice').value = product.preco || '';
+    
+    // Se for do banco, mostrar preço antigo
+    if (isFromDatabase && product.preco) {
+        document.getElementById('cartOldPrice').value = `R$ ${product.preco}`;
+    } else {
+        document.getElementById('cartOldPrice').value = 'N/A';
+    }
+    
+    document.getElementById('cartCurrentPrice').value = product.preco || product.price || '';
     document.getElementById('variationAmount').textContent = '0.00';
+    
+    // Mostrar opção de salvar no banco se for produto externo
+    const saveOption = document.getElementById('saveToDatabaseOption');
+    if (!isFromDatabase) {
+        saveOption.style.display = 'block';
+        document.getElementById('saveProductToDb').checked = true;
+    } else {
+        saveOption.style.display = 'none';
+    }
     
     const modal = document.getElementById('addToCartModal');
     modal.classList.remove('hidden');
@@ -1109,14 +972,18 @@ function updatePriceVariation() {
         
         if (variation < 0) {
             variationElement.style.color = 'var(--success)';
+            variationElement.innerHTML = `<i class="fas fa-arrow-down"></i> R$ ${Math.abs(variation).toFixed(2)}`;
         } else if (variation > 0) {
             variationElement.style.color = 'var(--danger)';
+            variationElement.innerHTML = `<i class="fas fa-arrow-up"></i> R$ ${variation.toFixed(2)}`;
         } else {
             variationElement.style.color = 'var(--secondary)';
+            variationElement.innerHTML = `R$ ${variation.toFixed(2)}`;
         }
     } else {
         variationElement.textContent = '0.00';
         variationElement.style.color = 'var(--secondary)';
+        variationElement.innerHTML = 'R$ 0.00';
     }
 }
 
@@ -1137,26 +1004,45 @@ async function addToCart() {
     updateStatus('Adicionando ao carrinho...', 'scanning');
     
     try {
-        const params = new URLSearchParams({
-            operation: 'addToCart',
-            ean: currentProduct.ean,
-            preco_atual: priceNumber,
-            preco_antigo: currentProduct.preco || 0
-        });
+        // Verificar se precisa salvar no banco primeiro (produto externo)
+        const saveToDb = document.getElementById('saveProductToDb')?.checked;
+        const isFromExternalSource = document.getElementById('saveToDatabaseOption').style.display === 'block';
         
-        const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
-        const response = await fetch(url);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+        if (isFromExternalSource && saveToDb && currentProduct) {
+            // Salvar produto no banco primeiro
+            const productData = {
+                ean: currentProduct.ean,
+                nome: currentProduct.nome || currentProduct.name || '',
+                marca: currentProduct.marca || currentProduct.brand || '',
+                imagem: currentProduct.imagem || currentProduct.image || '',
+                preco: priceNumber.toString(),
+                fonte: 'API Externa + Carrinho'
+            };
+            
+            const saveResult = await saveToGoogleSheets(productData);
+            
+            if (!saveResult.success) {
+                updateStatus(`❌ Erro ao salvar produto: ${saveResult.error}`, 'error');
+                return;
+            }
         }
         
-        const result = await response.json();
+        // Adicionar ao carrinho
+        const oldPriceText = document.getElementById('cartOldPrice').value;
+        const oldPriceMatch = oldPriceText.match(/[\d.,]+/);
+        const oldPrice = oldPriceMatch ? parseFloat(oldPriceMatch[0].replace(',', '.')) : 0;
+        
+        const result = await addToCartFromAPI(currentProduct.ean, priceNumber, oldPrice);
         
         if (result.success) {
             updateStatus('✅ Produto adicionado ao carrinho!', 'success');
             closeAddToCartModal();
             updateCartInfo();
+            
+            // Se estava na página de produtos, recarregar
+            if (document.getElementById('page-produtos').classList.contains('active')) {
+                loadAllProducts();
+            }
         } else {
             updateStatus(`❌ Erro: ${result.message}`, 'error');
         }
@@ -1166,8 +1052,259 @@ async function addToCart() {
     }
 }
 
+// ========== DISPLAY FUNCTIONS ==========
+function showProductInfo(product, isFromDatabase = true) {
+    const resultDiv = document.getElementById('result');
+    
+    let imageHtml = '';
+    if (product.imagem) {
+        imageHtml = `
+            <div class="product-image-container">
+                <img src="${product.imagem}" 
+                     class="product-image" 
+                     alt="${product.nome}"
+                     onerror="handleImageError(this)">
+            </div>
+        `;
+    } else {
+        imageHtml = `
+            <div class="product-image-container">
+                <div class="no-image">
+                    <i class="fas fa-image"></i>
+                    <span>Sem imagem</span>
+                </div>
+            </div>
+        `;
+    }
+    
+    let sourceBadge = isFromDatabase ? 
+        '<span class="db-badge">BANCO LOCAL</span>' : 
+        '<span class="db-missing">EXTERNO</span>';
+    
+    let priceHtml = '';
+    if (product.preco) {
+        priceHtml = `
+            <div class="product-price">
+                <i class="fas fa-money-bill-wave"></i> R$ ${product.preco}
+            </div>
+        `;
+    }
+    
+    resultDiv.innerHTML = `
+        <div class="product-card">
+            ${imageHtml}
+            
+            <div class="product-details">
+                <div class="product-code">
+                    <i class="fas fa-barcode"></i> EAN: ${product.ean}
+                </div>
+                
+                <div class="product-title">${product.nome}</div>
+                
+                ${product.marca ? `
+                <div class="product-brand">
+                    <i class="fas fa-industry"></i> ${product.marca}
+                </div>
+                ` : ''}
+                
+                ${priceHtml}
+                
+                ${product.cadastro ? `
+                <div class="product-meta">
+                    <i class="fas fa-calendar"></i> Cadastro: ${product.cadastro}
+                </div>
+                ` : ''}
+                
+                <div class="source-badge">
+                    <i class="fas fa-database"></i> ${sourceBadge}
+                </div>
+            </div>
+        </div>
+        
+        <div class="action-buttons">
+            <!-- SEMPRE mostrar botão de adicionar ao carrinho, mesmo para produtos externos -->
+            <button class="btn btn-success" onclick="openAddToCartModal(${JSON.stringify(product)}, ${isFromDatabase})">
+                <i class="fas fa-cart-plus"></i> Adicionar ao Carrinho
+            </button>
+            
+            ${isFromDatabase ? `
+            <button class="btn btn-warning" onclick="openEditModal('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', '${product.linha || ''}')">
+                <i class="fas fa-edit"></i> Editar
+            </button>
+            <button class="btn btn-danger" onclick="deleteProduct('${product.ean}', '${product.linha || ''}')">
+                <i class="fas fa-trash"></i> Excluir
+            </button>
+            ` : `
+            <button class="btn btn-warning" onclick="openEditModalForNewProduct('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', '${product.source || 'API Externa'}')">
+                <i class="fas fa-save"></i> Salvar no Banco
+            </button>
+            `}
+            <button class="btn btn-secondary" onclick="searchOnline('${product.ean}', '${encodeURIComponent(product.nome)}')">
+                <i class="fas fa-globe"></i> Pesquisar Online
+            </button>
+        </div>
+    `;
+    
+    resultDiv.classList.add('active');
+}
+
+function showExternalProductInfo(product, code, source) {
+    const resultDiv = document.getElementById('result');
+    
+    let imageHtml = '';
+    if (product.image) {
+        imageHtml = `
+            <div class="product-image-container">
+                <img src="${product.image}" 
+                     class="product-image" 
+                     alt="${product.name}"
+                     onerror="handleImageError(this)">
+            </div>
+        `;
+    } else {
+        imageHtml = `
+            <div class="product-image-container">
+                <div class="no-image">
+                    <i class="fas fa-image"></i>
+                    <span>Sem imagem</span>
+                </div>
+            </div>
+        `;
+    }
+    
+    let priceHtml = '';
+    if (product.price) {
+        priceHtml = `
+            <div class="product-price">
+                <i class="fas fa-money-bill-wave"></i> ${product.price}
+            </div>
+        `;
+    }
+    
+    // Criar objeto produto para passar para o modal
+    const productObj = {
+        ean: code,
+        nome: product.name,
+        marca: product.brand,
+        imagem: product.image,
+        price: product.price,
+        source: source
+    };
+    
+    resultDiv.innerHTML = `
+        <div class="product-card">
+            ${imageHtml}
+            
+            <div class="product-details">
+                <div class="product-code">
+                    <i class="fas fa-barcode"></i> EAN: ${code}
+                </div>
+                
+                <div class="product-title">${product.name}</div>
+                
+                ${product.brand ? `
+                <div class="product-brand">
+                    <i class="fas fa-industry"></i> ${product.brand}
+                </div>
+                ` : ''}
+                
+                ${priceHtml}
+                
+                <div class="source-badge">
+                    <i class="fas fa-external-link-alt"></i> Fonte: ${source} <span class="db-missing">EXTERNO</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="action-buttons">
+            <button class="btn btn-success" onclick="openAddToCartModal(${JSON.stringify(productObj)}, false)">
+                <i class="fas fa-cart-plus"></i> Adicionar ao Carrinho
+            </button>
+            <button class="btn btn-warning" onclick="openEditModalForNewProduct('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
+                <i class="fas fa-save"></i> Salvar no Banco
+            </button>
+            <button class="btn btn-secondary" onclick="searchOnline('${code}', '${encodeURIComponent(product.name)}')">
+                <i class="fas fa-globe"></i> Pesquisar Online
+            </button>
+        </div>
+    `;
+    
+    resultDiv.classList.add('active');
+}
+
+function showAddToDatabaseForm(code) {
+    const resultDiv = document.getElementById('result');
+    
+    resultDiv.innerHTML = `
+        <div class="no-results">
+            <div class="no-results-icon">
+                <i class="fas fa-plus-circle"></i>
+            </div>
+            <h3>Produto não encontrado</h3>
+            <p>
+                Código: <strong>${code}</strong><br>
+                O produto não foi encontrado em nenhuma fonte.
+            </p>
+            
+            <div class="action-buttons">
+                <button class="btn btn-success" onclick="openManualAddModal('${code}')">
+                    <i class="fas fa-plus"></i> Cadastrar Manualmente
+                </button>
+                <button class="btn btn-secondary" onclick="searchOnline('${code}')">
+                    <i class="fas fa-globe"></i> Pesquisar na Web
+                </button>
+            </div>
+        </div>
+    `;
+    
+    resultDiv.classList.add('active');
+}
+
+function showErrorResult(title, message) {
+    const resultDiv = document.getElementById('result');
+    
+    resultDiv.innerHTML = `
+        <div class="no-results">
+            <div class="no-results-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h3>${title}</h3>
+            <p>${message}</p>
+            <button class="btn btn-secondary" onclick="searchManual()">
+                <i class="fas fa-redo"></i> Tentar novamente
+            </button>
+        </div>
+    `;
+    
+    resultDiv.classList.add('active');
+}
+
+function clearResult() {
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = '';
+    resultDiv.classList.remove('active');
+}
+
 // ========== HISTORY FUNCTIONS ==========
+async function getPurchaseHistory() {
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=getHistorico`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Erro ao buscar histórico:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 async function loadPurchaseHistory() {
+    if (isLoading) return;
+    
     showPage('historico');
     
     const historyContent = document.getElementById('historyContent');
@@ -1178,27 +1315,21 @@ async function loadPurchaseHistory() {
         </div>
     `;
     
+    isLoading = true;
+    
     try {
-        const url = `${GOOGLE_SHEETS_API}?operation=getHistorico`;
-        const response = await fetch(url);
+        const result = await getPurchaseHistory();
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const result = await response.json();
-        
-        if (result.success) {
+        if (result && result.success) {
             displayPurchaseHistory(result);
-            updateStatus(`✅ Histórico carregado (${result.total_datas} datas)`, 'success');
         } else {
             historyContent.innerHTML = `
                 <div class="no-results">
                     <div class="no-results-icon">
                         <i class="fas fa-exclamation-triangle"></i>
                     </div>
-                    <h3>Erro ao carregar histórico</h3>
-                    <p>${result.message || 'Tente novamente mais tarde.'}</p>
+                    <h3>${result?.message || 'Erro ao carregar histórico'}</h3>
+                    <p>Tente novamente mais tarde.</p>
                 </div>
             `;
         }
@@ -1213,13 +1344,15 @@ async function loadPurchaseHistory() {
                 <p>Tente novamente mais tarde.</p>
             </div>
         `;
+    } finally {
+        isLoading = false;
     }
 }
 
 function displayPurchaseHistory(result) {
     const historyContent = document.getElementById('historyContent');
     
-    if (result.total_datas === 0) {
+    if (!result.historico || result.total_datas === 0) {
         historyContent.innerHTML = `
             <div class="no-results">
                 <div class="no-results-icon">
@@ -1271,6 +1404,8 @@ function displayPurchaseHistory(result) {
 }
 
 async function showDateDetails(dateStr) {
+    if (isLoading) return;
+    
     const historyContent = document.getElementById('historyContent');
     historyContent.innerHTML = `
         <div class="loading-state">
@@ -1278,6 +1413,8 @@ async function showDateDetails(dateStr) {
             <p>Carregando detalhes...</p>
         </div>
     `;
+    
+    isLoading = true;
     
     try {
         const url = `${GOOGLE_SHEETS_API}?operation=getHistoricoData&data=${dateStr}`;
@@ -1297,8 +1434,7 @@ async function showDateDetails(dateStr) {
                     <div class="no-results-icon">
                         <i class="fas fa-exclamation-triangle"></i>
                     </div>
-                    <h3>Erro ao carregar detalhes</h3>
-                    <p>${result.message}</p>
+                    <h3>${result.message}</h3>
                     <button class="btn btn-secondary" onclick="loadPurchaseHistory()">
                         <i class="fas fa-arrow-left"></i> Voltar
                     </button>
@@ -1313,12 +1449,13 @@ async function showDateDetails(dateStr) {
                     <i class="fas fa-exclamation-triangle"></i>
                 </div>
                 <h3>Erro ao carregar detalhes</h3>
-                <p>Tente novamente mais tarde.</p>
                 <button class="btn btn-secondary" onclick="loadPurchaseHistory()">
                     <i class="fas fa-arrow-left"></i> Voltar
                 </button>
             </div>
         `;
+    } finally {
+        isLoading = false;
     }
 }
 
@@ -1431,6 +1568,8 @@ function displayDateDetails(result) {
 
 // ========== PRODUCTS PAGE ==========
 async function loadAllProducts() {
+    if (isLoading) return;
+    
     showPage('produtos');
     
     const productsContent = document.getElementById('productsContent');
@@ -1441,12 +1580,13 @@ async function loadAllProducts() {
         </div>
     `;
     
+    isLoading = true;
+    
     try {
         const result = await getAllProductsFromSheets();
         
         if (result && result.success && result.produtos && result.produtos.length > 0) {
             displayProductsList(result.produtos);
-            updateStatus(`✅ ${result.produtos.length} produtos carregados`, 'success');
         } else {
             productsContent.innerHTML = `
                 <div class="no-results">
@@ -1462,7 +1602,6 @@ async function loadAllProducts() {
                     </div>
                 </div>
             `;
-            updateStatus('❌ Nenhum produto encontrado no banco', 'warning');
         }
     } catch (error) {
         console.error('Erro ao carregar produtos:', error);
@@ -1475,7 +1614,8 @@ async function loadAllProducts() {
                 <p>Tente novamente mais tarde.</p>
             </div>
         `;
-        updateStatus('Erro ao carregar produtos', 'error');
+    } finally {
+        isLoading = false;
     }
 }
 
@@ -1514,7 +1654,7 @@ function displayProductsList(products) {
                     ${priceHtml}
                 </div>
                 <div class="product-list-actions">
-                    <button class="btn-small btn-success" onclick="openAddToCartModal(${JSON.stringify(product)})">
+                    <button class="btn-small btn-success" onclick="openAddToCartModal(${JSON.stringify(product)}, true)">
                         <i class="fas fa-cart-plus"></i>
                     </button>
                     <button class="btn-small btn-warning" onclick="openEditModal('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', '${product.linha || ''}')">
@@ -1632,33 +1772,12 @@ async function saveEditedProduct() {
         updateStatus('✅ Produto salvo no banco local!', 'success');
         closeEditModal();
         
-        if (document.querySelector('.products-list-container')) {
-            setTimeout(() => loadAllProducts(), 1000);
+        // Recarregar conteúdo apropriado
+        if (document.getElementById('page-produtos').classList.contains('active')) {
+            loadAllProducts();
         } else {
             setTimeout(() => searchProduct(currentProduct.ean), 1000);
         }
-    } else {
-        updateStatus(`❌ Erro ao salvar: ${result.error || result.message}`, 'error');
-    }
-}
-
-async function saveExternalProductToDatabase(code, name, brand, image, price, source) {
-    const productData = {
-        ean: code,
-        nome: decodeURIComponent(name),
-        marca: decodeURIComponent(brand),
-        imagem: decodeURIComponent(image),
-        preco: decodeURIComponent(price),
-        fonte: source
-    };
-    
-    updateStatus('Salvando no banco local...', 'scanning');
-    
-    const result = await saveToGoogleSheets(productData);
-    
-    if (result.success) {
-        updateStatus('✅ Produto salvo no banco local!', 'success');
-        setTimeout(() => searchProduct(code), 1000);
     } else {
         updateStatus(`❌ Erro ao salvar: ${result.error || result.message}`, 'error');
     }
@@ -1676,8 +1795,8 @@ async function deleteProduct(ean, linha) {
     if (result.success) {
         updateStatus('✅ Produto excluído do banco local!', 'success');
         
-        if (document.querySelector('.products-list-container')) {
-            setTimeout(() => loadAllProducts(), 1000);
+        if (document.getElementById('page-produtos').classList.contains('active')) {
+            loadAllProducts();
         } else {
             const resultDiv = document.getElementById('result');
             resultDiv.innerHTML = `
@@ -1757,7 +1876,18 @@ function searchOnline(code, name = '') {
 }
 
 function showAlert(message, type = 'info') {
-    alert(`[${type.toUpperCase()}] ${message}`);
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type}`;
+    alertDiv.innerHTML = `
+        <i class="fas fa-${type === 'error' ? 'times-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
+        ${message}
+    `;
+    
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 3000);
 }
 
 function checkAPIStatus() {
@@ -1788,7 +1918,6 @@ window.openManualAddModal = openManualAddModal;
 window.closeEditModal = closeEditModal;
 window.saveEditedProduct = saveEditedProduct;
 window.deleteProduct = deleteProduct;
-window.saveExternalProductToDatabase = saveExternalProductToDatabase;
 window.openAddToCartModal = openAddToCartModal;
 window.closeAddToCartModal = closeAddToCartModal;
 window.addToCart = addToCart;
