@@ -1,5 +1,5 @@
 // ========== CONFIGURAÇÕES ==========
-const GOOGLE_SHEETS_API = "https://script.google.com/macros/s/AKfycbw2eL8uz9YV4Ju1IXo19AWEuKWjHz7o7cyHgL6_LMiUuZ0JJzRsKMTKxAot8ekwXu3-ew/exec";
+const GOOGLE_SHEETS_API = "https://script.google.com/macros/s/AKfycbxFRdlsnduwPU1yfRdA6ifAbXU2S8xFlQyXIpdNYqMRCB1ZosGBnYfQaFTccs0JYXuqew/exec";
 const BLUESOFT_API_KEY = "7tF33vAL9xZs7ZRoSMBitg";
 
 // ========== VARIÁVEIS GLOBAIS ==========
