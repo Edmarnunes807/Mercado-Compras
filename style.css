@@ -1107,32 +1107,6 @@ body {
     min-width: 120px; 
 }
 
-/* ===== NO RESULTS ===== */
-.no-results {
-    text-align: center;
-    padding: 40px 20px;
-}
-
-.no-results-icon { 
-    font-size: 64px; 
-    margin-bottom: 20px; 
-    color: var(--gray); 
-    opacity: 0.5;
-}
-
-.no-results h3 {
-    color: var(--dark);
-    margin-bottom: 10px;
-    font-size: 18px;
-}
-
-.no-results p {
-    color: var(--secondary);
-    font-size: 14px;
-    margin-bottom: 25px;
-    line-height: 1.5;
-}
-
 /* ===== LOADING STATE ===== */
 .loading-state {
     text-align: center;
@@ -1141,6 +1115,11 @@ body {
 
 .loading-state .loading {
     margin: 0 auto 15px;
+}
+
+.loading-state p {
+    color: var(--secondary);
+    margin-top: 10px;
 }
 
 /* ===== FORMS ===== */
@@ -1171,6 +1150,11 @@ body {
     outline: none;
     border-color: var(--primary);
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.form-group input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px;
 }
 
 /* ===== PRICE VARIATION ===== */
@@ -1315,6 +1299,58 @@ body {
     font-family: 'Courier New', monospace;
     font-size: 13px;
     color: var(--gray);
+}
+
+/* ===== CHECKOUT RECEIPT ===== */
+.checkout-receipt {
+    text-align: center;
+}
+
+.receipt-header {
+    margin-bottom: 20px;
+}
+
+.receipt-header .success {
+    font-size: 48px;
+    color: var(--success);
+    margin-bottom: 10px;
+}
+
+.receipt-date {
+    color: var(--gray);
+    font-size: 14px;
+}
+
+.receipt-summary {
+    background: var(--light);
+    border-radius: var(--radius-sm);
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.receipt-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--border);
+}
+
+.receipt-row:last-child {
+    border-bottom: none;
+}
+
+.receipt-value {
+    font-weight: 500;
+}
+
+.receipt-value.total {
+    color: var(--success);
+    font-size: 18px;
+}
+
+.receipt-footer {
+    margin-top: 20px;
 }
 
 /* ===== FOOTER ===== */
