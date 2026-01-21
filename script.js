@@ -301,7 +301,7 @@ function onScanSuccess(decodedText, decodedResult) {
     searchProduct(code);
 }
 
-// ========== FLUXO DE BUSCA OTIMIZADO ==========
+// ========== FLUXO DE BUSCA ==========
 async function searchProduct(code) {
     if (!code || !isValidBarcode(code)) {
         showAlert('Código EAN inválido. Use 8-13 dígitos.', 'error');
@@ -1001,6 +1001,11 @@ async function addToCart() {
         return;
     }
     
+    if (!currentProduct) {
+        showAlert('Produto não encontrado', 'error');
+        return;
+    }
+    
     updateStatus('Adicionando ao carrinho...', 'scanning');
     
     try {
@@ -1023,32 +1028,52 @@ async function addToCart() {
             
             if (!saveResult.success) {
                 updateStatus(`❌ Erro ao salvar produto: ${saveResult.error}`, 'error');
+                showAlert(`Erro ao salvar produto: ${saveResult.error}`, 'error');
                 return;
             }
         }
         
-        // Adicionar ao carrinho
+        // Buscar preço antigo do produto
+        let oldPrice = 0;
         const oldPriceText = document.getElementById('cartOldPrice').value;
         const oldPriceMatch = oldPriceText.match(/[\d.,]+/);
-        const oldPrice = oldPriceMatch ? parseFloat(oldPriceMatch[0].replace(',', '.')) : 0;
         
+        if (oldPriceMatch) {
+            oldPrice = parseFloat(oldPriceMatch[0].replace(',', '.'));
+        } else if (currentProduct.preco) {
+            // Tentar usar o preço do produto atual
+            oldPrice = parseFloat(currentProduct.preco.toString().replace(',', '.'));
+        }
+        
+        // Adicionar ao carrinho usando a API do Google Sheets
         const result = await addToCartFromAPI(currentProduct.ean, priceNumber, oldPrice);
         
         if (result.success) {
             updateStatus('✅ Produto adicionado ao carrinho!', 'success');
             closeAddToCartModal();
-            updateCartInfo();
+            
+            // Limpar campo de busca
+            document.getElementById('manualCode').value = '';
+            
+            // Atualizar informações do carrinho no cabeçalho
+            setTimeout(() => updateCartInfo(), 500);
             
             // Se estava na página de produtos, recarregar
             if (document.getElementById('page-produtos').classList.contains('active')) {
-                loadAllProducts();
+                setTimeout(() => loadAllProducts(), 1000);
             }
+            
+            // Mostrar mensagem de sucesso
+            showAlert('Produto adicionado ao carrinho com sucesso!', 'success');
+            
         } else {
             updateStatus(`❌ Erro: ${result.message}`, 'error');
+            showAlert(`Erro: ${result.message}`, 'error');
         }
     } catch (error) {
         console.error('Erro ao adicionar ao carrinho:', error);
         updateStatus('Erro ao adicionar ao carrinho', 'error');
+        showAlert('Erro ao adicionar ao carrinho. Tente novamente.', 'error');
     }
 }
 
@@ -1876,18 +1901,76 @@ function searchOnline(code, name = '') {
 }
 
 function showAlert(message, type = 'info') {
+    // Criar elemento de alerta
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type}`;
-    alertDiv.innerHTML = `
-        <i class="fas fa-${type === 'error' ? 'times-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
-        ${message}
+    alertDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        z-index: 9999;
+        animation: slideIn 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        max-width: 300px;
+        font-size: 14px;
     `;
     
+    // Definir cores baseadas no tipo
+    if (type === 'success') {
+        alertDiv.style.backgroundColor = '#10b981';
+    } else if (type === 'error') {
+        alertDiv.style.backgroundColor = '#ef4444';
+    } else if (type === 'warning') {
+        alertDiv.style.backgroundColor = '#f59e0b';
+    } else {
+        alertDiv.style.backgroundColor = '#3b82f6';
+    }
+    
+    // Adicionar ícone
+    let icon = '';
+    if (type === 'success') icon = 'check-circle';
+    else if (type === 'error') icon = 'times-circle';
+    else if (type === 'warning') icon = 'exclamation-triangle';
+    else icon = 'info-circle';
+    
+    alertDiv.innerHTML = `<i class="fas fa-${icon}"></i> ${message}`;
+    
+    // Adicionar ao body
     document.body.appendChild(alertDiv);
     
+    // Remover após 3 segundos
     setTimeout(() => {
-        alertDiv.remove();
+        alertDiv.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.parentNode.removeChild(alertDiv);
+            }
+        }, 300);
     }, 3000);
+    
+    // Adicionar animações CSS se não existirem
+    if (!document.querySelector('#alert-animations')) {
+        const style = document.createElement('style');
+        style.id = 'alert-animations';
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
 }
 
 function checkAPIStatus() {
