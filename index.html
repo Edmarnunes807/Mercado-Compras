@@ -3,418 +3,235 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Compras Inteligente</title>
+    <title>Scanner Inteligente + Sistema de Compras</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <!-- Container Principal -->
-    <div class="excel-container">
-        <!-- Cabeçalho estilo Excel -->
-        <div class="excel-header">
-            <div class="logo">
-                <i class="fas fa-shopping-cart"></i>
-                <span>CompraInteligente</span>
-            </div>
-            <div class="header-actions">
-                <div class="cart-summary" id="cartSummary">
-                    <i class="fas fa-cart-shopping"></i>
-                    <span id="cartCount">0</span> itens
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-barcode"></i> Scanner + Compras</h1>
+            <p>EAN → Banco Local • Carrinho • Histórico • Estatísticas</p>
+        </div>
+        
+        <div class="content">
+            <!-- Busca Manual -->
+            <div class="input-group">
+                <div class="input-with-icon">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="manualCode" placeholder="Digite o código EAN (8-13 dígitos)" maxlength="13">
                 </div>
+                <button class="btn btn-primary" onclick="searchManual()">
+                    <i class="fas fa-search"></i> Buscar Produto
+                </button>
             </div>
-        </div>
-
-        <!-- Abas estilo Excel -->
-        <div class="excel-tabs">
-            <button class="tab active" data-tab="scanner" onclick="switchTab('scanner')">
-                <i class="fas fa-barcode"></i> Scanner
-            </button>
-            <button class="tab" data-tab="produtos" onclick="switchTab('produtos')">
-                <i class="fas fa-box"></i> Produtos
-            </button>
-            <button class="tab" data-tab="compras" onclick="switchTab('compras')">
-                <i class="fas fa-shopping-cart"></i> Carrinho
-            </button>
-            <button class="tab" data-tab="historico" onclick="switchTab('historico')">
-                <i class="fas fa-history"></i> Histórico
-            </button>
-        </div>
-
-        <!-- Conteúdo das Abas -->
-        <div class="excel-content">
             
-            <!-- ABA: SCANNER -->
-            <div id="scanner-tab" class="tab-content active">
-                <div class="tab-header">
-                    <h2><i class="fas fa-barcode"></i> Scanner de Produtos</h2>
-                    <p>Escanear código de barras ou pesquisar manualmente</p>
+            <!-- Scanner -->
+            <div class="scanner-section">
+                <button class="btn btn-camera" id="startBtn" onclick="initScanner()">
+                    <i class="fas fa-camera"></i> Abrir Scanner
+                </button>
+                
+                <button class="btn btn-secondary hidden" id="stopBtn" onclick="stopScanner()">
+                    <i class="fas fa-stop"></i> Parar Scanner
+                </button>
+                
+                <div class="camera-info hidden" id="cameraInfo">
+                    <i class="fas fa-video"></i> Usando câmera traseira com auto-foco
                 </div>
                 
-                <div class="input-group">
-                    <div class="input-with-icon">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="manualCode" placeholder="Digite o EAN (8-13 dígitos)" maxlength="13">
+                <div class="scanner-container" id="scannerContainer">
+                    <div id="reader"></div>
+                    <div class="scanner-overlay">
+                        <div class="focus-frame">
+                            <div class="scan-line"></div>
+                        </div>
                     </div>
-                    <button class="btn btn-primary" onclick="searchProduct()">
-                        <i class="fas fa-search"></i> Buscar Produto
-                    </button>
                 </div>
-
-                <div class="scanner-section">
-                    <button class="btn btn-camera" id="startBtn" onclick="initScanner()">
-                        <i class="fas fa-camera"></i> Iniciar Scanner
-                    </button>
-                    
-                    <div class="camera-info hidden" id="cameraInfo">
-                        <i class="fas fa-video"></i> Scanner ativo
-                    </div>
-                    
-                    <div class="hidden" id="cameraControls">
-                        <button class="btn btn-secondary" onclick="stopScanner()">
-                            <i class="fas fa-stop"></i> Parar Scanner
+            </div>
+            
+            <!-- Status -->
+            <div class="status" id="status">
+                <i class="fas fa-check-circle"></i> Pronto para escanear
+            </div>
+            
+            <!-- Tabs -->
+            <div class="tab-container">
+                <div class="tab active" onclick="switchTab('resultado')">
+                    <i class="fas fa-search"></i> Resultado
+                </div>
+                <div class="tab" onclick="switchTab('produtos')">
+                    <i class="fas fa-boxes"></i> Todos Produtos
+                </div>
+                <div class="tab" onclick="switchTab('compras')">
+                    <i class="fas fa-shopping-cart"></i> Carrinho
+                </div>
+                <div class="tab" onclick="switchTab('historico')">
+                    <i class="fas fa-history"></i> Histórico
+                </div>
+                <div class="tab" onclick="switchTab('estatisticas')">
+                    <i class="fas fa-chart-bar"></i> Estatísticas
+                </div>
+            </div>
+            
+            <!-- Resultado da Busca -->
+            <div id="resultadoSection" class="tab-content active">
+                <div class="result" id="result"></div>
+            </div>
+            
+            <!-- Lista de Produtos -->
+            <div id="produtosSection" class="tab-content hidden">
+                <div class="lista-header">
+                    <h3><i class="fas fa-boxes"></i> Todos os Produtos</h3>
+                    <div class="search-box">
+                        <input type="text" id="buscaProdutos" placeholder="Buscar produto..." 
+                               onkeyup="filtrarProdutos()">
+                        <button class="btn btn-small" onclick="carregarTodosProdutos()">
+                            <i class="fas fa-sync"></i>
                         </button>
                     </div>
-                    
-                    <div class="scanner-container" id="scannerContainer">
-                        <div id="reader"></div>
-                    </div>
                 </div>
-
-                <div class="status" id="status">
-                    <i class="fas fa-info-circle"></i> Pronto para escanear
+                
+                <div id="listaProdutos" class="lista-produtos">
+                    <!-- Lista de produtos aparecerá aqui -->
                 </div>
-
-                <div class="search-sources">
-                    <div class="source-info">
-                        <h3><i class="fas fa-database"></i> Ordem de Busca</h3>
-                        <ol>
-                            <li>Banco Local (Google Sheets)</li>
-                            <li>Open Food Facts</li>
-                            <li>Bluesoft Cosmos</li>
-                        </ol>
-                    </div>
-                </div>
-
-                <!-- Resultado da Busca -->
-                <div class="result-container" id="resultContainer">
-                    <!-- Resultados serão carregados aqui via JS -->
-                </div>
-            </div>
-
-            <!-- ABA: PRODUTOS -->
-            <div id="produtos-tab" class="tab-content">
-                <div class="tab-header">
-                    <h2><i class="fas fa-box"></i> Banco de Produtos</h2>
-                    <p>Produtos cadastrados no sistema</p>
-                </div>
-
-                <div class="table-controls">
-                    <div class="search-box">
-                        <input type="text" id="searchProducts" placeholder="Buscar produto..." onkeyup="filterProducts()">
-                        <i class="fas fa-search"></i>
-                    </div>
-                    <button class="btn btn-refresh" onclick="loadProducts()">
-                        <i class="fas fa-sync-alt"></i> Atualizar
+                
+                <div class="paginacao">
+                    <button class="btn btn-small" onclick="paginaAnterior()" id="btnAnterior">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <span id="paginaAtual">Página 1</span>
+                    <button class="btn btn-small" onclick="proximaPagina()" id="btnProximo">
+                        <i class="fas fa-chevron-right"></i>
                     </button>
                 </div>
-
-                <div class="excel-table-container">
-                    <table class="excel-table" id="productsTable">
-                        <thead>
-                            <tr>
-                                <th width="120">EAN</th>
-                                <th>Nome</th>
-                                <th width="120">Marca</th>
-                                <th width="100">Preço</th>
-                                <th width="120">Últ. Atualização</th>
-                                <th width="100">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="productsBody">
-                            <!-- Produtos serão carregados via JS -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="table-footer">
-                    <div class="table-info" id="productsInfo">
-                        Carregando produtos...
-                    </div>
-                </div>
-            </div>
-
-            <!-- ABA: CARRINHO -->
-            <div id="compras-tab" class="tab-content">
-                <div class="tab-header">
-                    <h2><i class="fas fa-shopping-cart"></i> Carrinho de Compras</h2>
-                    <p>Itens adicionados para compra</p>
-                </div>
-
-                <div class="cart-summary-cards">
-                    <div class="summary-card">
-                        <div class="summary-icon">
-                            <i class="fas fa-boxes"></i>
-                        </div>
-                        <div class="summary-content">
-                            <div class="summary-label">Itens</div>
-                            <div class="summary-value" id="cartItemsCount">0</div>
-                        </div>
-                    </div>
-                    
-                    <div class="summary-card">
-                        <div class="summary-icon">
-                            <i class="fas fa-money-bill-wave"></i>
-                        </div>
-                        <div class="summary-content">
-                            <div class="summary-label">Total Atual</div>
-                            <div class="summary-value" id="cartTotalCurrent">R$ 0,00</div>
-                        </div>
-                    </div>
-                    
-                    <div class="summary-card">
-                        <div class="summary-icon">
-                            <i class="fas fa-history"></i>
-                        </div>
-                        <div class="summary-content">
-                            <div class="summary-label">Total Anterior</div>
-                            <div class="summary-value" id="cartTotalPrevious">R$ 0,00</div>
-                        </div>
-                    </div>
-                    
-                    <div class="summary-card">
-                        <div class="summary-icon">
-                            <i class="fas fa-chart-line"></i>
-                        </div>
-                        <div class="summary-content">
-                            <div class="summary-label">Variação</div>
-                            <div class="summary-value" id="cartVariation">R$ 0,00</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="table-controls">
-                    <button class="btn btn-success" onclick="checkout()" id="checkoutBtn" disabled>
-                        <i class="fas fa-cash-register"></i> Finalizar Compra
-                    </button>
-                    <button class="btn btn-danger" onclick="clearCart()" id="clearCartBtn" disabled>
-                        <i class="fas fa-trash"></i> Limpar Carrinho
-                    </button>
-                </div>
-
-                <div class="excel-table-container">
-                    <table class="excel-table" id="cartTable">
-                        <thead>
-                            <tr>
-                                <th width="50"></th>
-                                <th width="120">EAN</th>
-                                <th>Produto</th>
-                                <th width="120">Preço Anterior</th>
-                                <th width="120">Preço Atual</th>
-                                <th width="100">Variação</th>
-                                <th width="100">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="cartBody">
-                            <!-- Itens do carrinho serão carregados aqui -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- ABA: HISTÓRICO -->
-            <div id="historico-tab" class="tab-content">
-                <div class="tab-header">
-                    <h2><i class="fas fa-history"></i> Histórico de Compras</h2>
-                    <p>Registro de todas as compras realizadas</p>
-                </div>
-
-                <div class="table-controls">
-                    <div class="search-box">
-                        <input type="date" id="filterDate" onchange="filterHistoryByDate()">
-                    </div>
-                    <button class="btn btn-refresh" onclick="loadHistory()">
-                        <i class="fas fa-sync-alt"></i> Atualizar
-                    </button>
-                </div>
-
-                <div class="history-dates" id="historyDates">
-                    <!-- Datas de compra serão listadas aqui -->
-                </div>
-
-                <div class="excel-table-container">
-                    <table class="excel-table" id="historyTable">
-                        <thead>
-                            <tr>
-                                <th width="120">Data</th>
-                                <th width="120">EAN</th>
-                                <th>Produto</th>
-                                <th width="120">Preço Anterior</th>
-                                <th width="120">Preço Comprado</th>
-                                <th width="100">Variação</th>
-                            </tr>
-                        </thead>
-                        <tbody id="historyBody">
-                            <!-- Histórico será carregado aqui -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Rodapé -->
-        <div class="excel-footer">
-            <div class="footer-info">
-                <i class="fas fa-database"></i>
-                <span id="apiStatus">Conectando...</span>
-            </div>
-            <div class="footer-stats">
-                <span id="totalProducts">0 produtos</span> | 
-                <span id="totalHistory">0 compras</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL: Editar Preço -->
-    <div class="modal" id="priceModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-money-bill-wave"></i> Editar Preço</h3>
-                <button class="btn-close" onclick="closePriceModal()">
-                    <i class="fas fa-times"></i>
-                </button>
             </div>
             
-            <div class="modal-body">
-                <div class="product-preview">
-                    <div class="product-image" id="modalProductImage">
-                        <i class="fas fa-image"></i>
-                    </div>
-                    <div class="product-info">
-                        <h4 id="modalProductName">Nome do Produto</h4>
-                        <p class="product-ean" id="modalProductEAN">EAN: </p>
-                        <p class="product-brand" id="modalProductBrand">Marca: </p>
+            <!-- Carrinho de Compras -->
+            <div id="comprasSection" class="tab-content hidden">
+                <div class="carrinho-header">
+                    <h3><i class="fas fa-shopping-cart"></i> Carrinho de Compras</h3>
+                    <div class="carrinho-stats">
+                        <span id="carrinhoCount">0 itens</span>
+                        <span id="carrinhoTotal">R$ 0,00</span>
                     </div>
                 </div>
-
-                <div class="price-comparison">
-                    <div class="price-card old-price">
-                        <div class="price-label">
-                            <i class="fas fa-history"></i> Preço Anterior
-                        </div>
-                        <div class="price-value" id="modalOldPrice">R$ 0,00</div>
-                    </div>
-
-                    <div class="price-card current-price">
-                        <div class="price-label">
-                            <i class="fas fa-tag"></i> Preço Atual *
-                        </div>
-                        <div class="price-input-container">
-                            <span class="currency">R$</span>
-                            <input type="number" 
-                                   id="modalCurrentPrice" 
-                                   step="0.01"
-                                   min="0.01"
-                                   placeholder="0,00"
-                                   oninput="calculateVariationModal()">
-                        </div>
-                    </div>
-
-                    <div class="price-card variation">
-                        <div class="price-label">
-                            <i class="fas fa-chart-line"></i> Variação
-                        </div>
-                        <div class="variation-display">
-                            <div class="variation-value" id="modalVariationValue">R$ 0,00</div>
-                            <div class="variation-percent" id="modalVariationPercent">0%</div>
-                        </div>
-                    </div>
+                
+                <div id="carrinhoItens" class="carrinho-itens">
+                    <!-- Itens do carrinho aparecerão aqui -->
                 </div>
-
-                <div class="price-indicator" id="priceIndicator">
-                    <div class="indicator-icon">
-                        <i class="fas fa-minus"></i>
-                    </div>
-                    <div class="indicator-text">Mesmo preço</div>
+                
+                <div class="carrinho-actions">
+                    <button class="btn btn-secondary" onclick="limparCarrinho()">
+                        <i class="fas fa-trash"></i> Limpar Carrinho
+                    </button>
+                    <button class="btn btn-success" onclick="finalizarCompra()">
+                        <i class="fas fa-check"></i> Finalizar Compra
+                    </button>
                 </div>
             </div>
+            
+            <!-- Histórico de Compras -->
+            <div id="historicoSection" class="tab-content hidden">
+                <div class="historico-header">
+                    <h3><i class="fas fa-history"></i> Histórico de Compras</h3>
+                    <select id="historicoFiltro" onchange="carregarHistorico()">
+                        <option value="7">Últimos 7 dias</option>
+                        <option value="30">Últimos 30 dias</option>
+                        <option value="all">Todo histórico</option>
+                    </select>
+                </div>
+                
+                <div id="historicoLista" class="historico-lista">
+                    <!-- Histórico aparecerá aqui -->
+                </div>
+            </div>
+            
+            <!-- Estatísticas -->
+            <div id="estatisticasSection" class="tab-content hidden">
+                <div class="stats-header">
+                    <h3><i class="fas fa-chart-bar"></i> Estatísticas do Sistema</h3>
+                    <button class="btn btn-small" onclick="carregarEstatisticas()">
+                        <i class="fas fa-sync"></i>
+                    </button>
+                </div>
+                
+                <div id="estatisticasConteudo" class="stats-content">
+                    <!-- Estatísticas aparecerão aqui -->
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Sistema Scanner • Google Sheets API • <span id="apiStatus">Conectado</span></p>
+        </div>
+    </div>
 
+    <!-- Modal para edição -->
+    <div class="modal hidden" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Editar Produto</h3>
+                <button class="btn-close" onclick="closeModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label><i class="fas fa-tag"></i> Nome do Produto *</label>
+                    <input type="text" id="editNome" placeholder="Ex: Leite Integral 1L" required>
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-industry"></i> Marca</label>
+                    <input type="text" id="editMarca" placeholder="Ex: Itambé">
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-image"></i> URL da Imagem</label>
+                    <input type="text" id="editImagem" placeholder="https://exemplo.com/imagem.jpg">
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-money-bill-wave"></i> Preço (R$)</label>
+                    <input type="text" id="editPreco" placeholder="Ex: 6.90">
+                </div>
+            </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closePriceModal()">
+                <button class="btn btn-secondary" onclick="closeModal()">
                     <i class="fas fa-times"></i> Cancelar
                 </button>
-                <button class="btn btn-primary" onclick="addToCartFromModal()">
-                    <i class="fas fa-cart-plus"></i> Adicionar ao Carrinho
+                <button class="btn btn-success" id="saveEditBtn" onclick="saveEditedProduct()">
+                    <i class="fas fa-save"></i> Salvar Alterações
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- MODAL: Confirmação -->
-    <div class="modal" id="confirmModal">
+    <!-- Modal para carrinho -->
+    <div class="modal hidden" id="carrinhoModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="confirmTitle">Confirmação</h3>
-                <button class="btn-close" onclick="closeConfirmModal()">
+                <h3><i class="fas fa-cart-plus"></i> Adicionar ao Carrinho</h3>
+                <button class="btn-close" onclick="fecharCarrinhoModal()">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="modal-body">
-                <p id="confirmMessage">Tem certeza que deseja realizar esta ação?</p>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeConfirmModal()">
-                    <i class="fas fa-times"></i> Cancelar
-                </button>
-                <button class="btn btn-danger" id="confirmActionBtn">
-                    <i class="fas fa-check"></i> Confirmar
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL: Recibo -->
-    <div class="modal" id="receiptModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-receipt"></i> Recibo da Compra</h3>
-                <button class="btn-close" onclick="closeReceiptModal()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="receipt-header">
-                    <div class="receipt-store">CompraInteligente</div>
-                    <div class="receipt-date" id="receiptDate">21/01/2026 14:30:00</div>
+                <div id="carrinhoProdutoInfo"></div>
+                <div class="form-group">
+                    <label><i class="fas fa-money-bill-wave"></i> Preço Atual (R$)</label>
+                    <input type="number" id="carrinhoPrecoAtual" step="0.01" min="0" placeholder="Ex: 6.90" required>
                 </div>
-                
-                <div class="receipt-items" id="receiptItems">
-                    <!-- Itens do recibo serão adicionados aqui -->
-                </div>
-                
-                <div class="receipt-totals">
-                    <div class="receipt-total-line">
-                        <span>Total Itens:</span>
-                        <span id="receiptTotalItems">0</span>
-                    </div>
-                    <div class="receipt-total-line">
-                        <span>Valor Total:</span>
-                        <span id="receiptTotalValue">R$ 0,00</span>
-                    </div>
-                    <div class="receipt-total-line highlight">
-                        <span>Economia Total:</span>
-                        <span id="receiptTotalSavings">R$ 0,00</span>
-                    </div>
-                </div>
-                
-                <div class="receipt-message">
-                    <i class="fas fa-info-circle"></i>
-                    <span>Preços atualizados no banco de produtos</span>
+                <div class="form-group">
+                    <label><i class="fas fa-history"></i> Preço Antigo (R$)</label>
+                    <input type="number" id="carrinhoPrecoAntigo" step="0.01" min="0" placeholder="Ex: 7.50 (opcional)">
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-primary" onclick="closeReceiptModal()">
-                    <i class="fas fa-check"></i> OK
+                <button class="btn btn-secondary" onclick="fecharCarrinhoModal()">
+                    Cancelar
+                </button>
+                <button class="btn btn-success" onclick="confirmarAdicionarCarrinho()">
+                    Adicionar ao Carrinho
                 </button>
             </div>
         </div>
