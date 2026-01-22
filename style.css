@@ -108,6 +108,11 @@ body {
     display: block;
 }
 
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* ===== INPUT GROUPS ===== */
 .input-group { 
     margin-bottom: 25px; 
@@ -177,27 +182,27 @@ body {
 }
 
 .btn-secondary {
-    background: var(--secondary);
+    background: linear-gradient(135deg, var(--secondary) 0%, #4b5563 100%);
     color: var(--white);
 }
 
 .btn-success {
-    background: var(--success);
+    background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
     color: var(--white);
 }
 
 .btn-warning {
-    background: var(--warning);
+    background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
     color: var(--white);
 }
 
 .btn-danger {
-    background: var(--danger);
+    background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);
     color: var(--white);
 }
 
 .btn-info {
-    background: var(--info);
+    background: linear-gradient(135deg, var(--info) 0%, #1d4ed8 100%);
     color: var(--white);
 }
 
@@ -291,6 +296,28 @@ body {
     50% { top: 100%; }
 }
 
+/* Botão Fechar Scanner (NOVO) */
+#closeScannerBtn {
+    margin-top: 15px;
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+}
+
+#closeScannerBtn:hover {
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    transform: translateY(-2px);
+}
+
 /* ===== STATUS ===== */
 .status {
     text-align: center;
@@ -374,11 +401,6 @@ body {
     padding: 20px;
     margin-top: 10px;
     animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
 }
 
 /* ===== PRODUCT CARD ===== */
@@ -631,8 +653,25 @@ body {
     font-weight: 600;
 }
 
-.variacao.positiva { color: var(--success); }
-.variacao.negativa { color: var(--danger); }
+.variacao.positiva { 
+    background: #fef3c7; 
+    color: #92400e; 
+}
+
+.variacao.negativa { 
+    background: #d1fae5; 
+    color: #065f46; 
+}
+
+.carrinho-resumo {
+    margin-top: 20px;
+    padding: 15px;
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    font-weight: 600;
+    color: #065f46;
+}
 
 .carrinho-actions {
     display: flex;
@@ -959,6 +998,57 @@ body {
     display: flex;
     gap: 10px;
     justify-content: flex-end;
+}
+
+/* ===== VARIAÇÃO DE PREÇO ===== */
+.variacao-container {
+    padding: 15px;
+    border-radius: var(--radius-sm);
+    margin-top: 15px;
+    animation: slideIn 0.3s ease;
+}
+
+.variacao-container.economia {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border: 1px solid #10b981;
+}
+
+.variacao-container.aumento {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 1px solid #f59e0b;
+}
+
+.variacao-container.sem-alteracao {
+    background: #f3f4f6;
+    border: 1px solid var(--border);
+}
+
+.variacao-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.variacao-header strong {
+    font-size: 16px;
+}
+
+.variacao-valor {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.variacao-valor.economia { color: #065f46; }
+.variacao-valor.aumento { color: #92400e; }
+.variacao-valor.sem-alteracao { color: #6b7280; }
+
+.variacao-detalhes {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    color: #6b7280;
+    margin-top: 5px;
 }
 
 /* ===== FOOTER ===== */
