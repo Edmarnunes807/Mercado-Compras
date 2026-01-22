@@ -3,24 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner + Compras</title>
+    <title>Scanner Inteligente + Sistema de Compras</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Scanner + Compras</h1>
-            <p>Escanee • Compare Preços • Economize</p>
+            <h1><i class="fas fa-barcode"></i> Scanner + Compras</h1>
+            <p>EAN → Banco Local • Carrinho (LocalStorage) • Histórico • Estatísticas</p>
         </div>
         
         <div class="content">
             <!-- Busca Manual -->
             <div class="input-group">
                 <div class="input-with-icon">
-                    <i class="fas fa-barcode"></i>
+                    <i class="fas fa-search"></i>
                     <input type="text" id="manualCode" placeholder="Digite o código EAN (8-13 dígitos)" maxlength="13">
                 </div>
                 <button class="btn btn-primary" onclick="searchManual()">
@@ -66,7 +65,7 @@
                     <i class="fas fa-boxes"></i> Todos Produtos
                 </div>
                 <div class="tab" onclick="switchTab('compras')">
-                    <i class="fas fa-shopping-cart"></i> Carrinho
+                    <i class="fas fa-shopping-cart"></i> Carrinho <span id="cartBadge" class="cart-badge hidden">0</span>
                 </div>
                 <div class="tab" onclick="switchTab('historico')">
                     <i class="fas fa-history"></i> Histórico
@@ -109,10 +108,10 @@
                 </div>
             </div>
             
-            <!-- Carrinho de Compras -->
+            <!-- Carrinho de Compras (LocalStorage) -->
             <div id="comprasSection" class="tab-content hidden">
                 <div class="carrinho-header">
-                    <h3><i class="fas fa-shopping-cart"></i> Carrinho de Compras</h3>
+                    <h3><i class="fas fa-shopping-cart"></i> Carrinho de Compras <small>(Armazenado Localmente)</small></h3>
                     <div class="carrinho-stats">
                         <span id="carrinhoCount">0 itens</span>
                         <span id="carrinhoTotal">R$ 0,00</span>
@@ -129,6 +128,9 @@
                     </button>
                     <button class="btn btn-success" onclick="finalizarCompra()">
                         <i class="fas fa-check"></i> Finalizar Compra
+                    </button>
+                    <button class="btn btn-export" onclick="exportarCarrinho()">
+                        <i class="fas fa-download"></i> Exportar
                     </button>
                 </div>
             </div>
@@ -165,7 +167,7 @@
         </div>
         
         <div class="footer">
-            <p>Sistema Scanner • Google Sheets API • <span id="apiStatus">Conectado</span></p>
+            <p>Sistema Scanner • Carrinho LocalStorage • <span id="apiStatus">Conectado</span></p>
         </div>
     </div>
 
