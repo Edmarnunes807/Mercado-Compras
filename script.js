@@ -41,11 +41,13 @@ async function initScanner() {
         const scannerContainer = document.getElementById('scannerContainer');
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
+        const closeScannerBtn = document.getElementById('closeScannerBtn');
         const cameraInfo = document.getElementById('cameraInfo');
         
         if (scannerContainer) scannerContainer.style.display = 'block';
         if (startBtn) startBtn.style.display = 'none';
         if (stopBtn) stopBtn.style.display = 'inline-block';
+        if (closeScannerBtn) closeScannerBtn.classList.remove('hidden');
         if (cameraInfo) cameraInfo.classList.remove('hidden');
         
         const config = {
@@ -178,11 +180,13 @@ async function handleScannerError(error) {
     
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
+    const closeScannerBtn = document.getElementById('closeScannerBtn');
     const scannerContainer = document.getElementById('scannerContainer');
     const cameraInfo = document.getElementById('cameraInfo');
     
     if (startBtn) startBtn.style.display = 'inline-block';
     if (stopBtn) stopBtn.style.display = 'none';
+    if (closeScannerBtn) closeScannerBtn.classList.add('hidden');
     if (scannerContainer) scannerContainer.style.display = 'none';
     if (cameraInfo) cameraInfo.classList.add('hidden');
     
@@ -232,12 +236,14 @@ async function initScannerSimple() {
         
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
+        const closeScannerBtn = document.getElementById('closeScannerBtn');
         const scannerContainer = document.getElementById('scannerContainer');
         const cameraInfo = document.getElementById('cameraInfo');
         
         if (scannerContainer) scannerContainer.style.display = 'block';
         if (startBtn) startBtn.style.display = 'none';
         if (stopBtn) stopBtn.style.display = 'inline-block';
+        if (closeScannerBtn) closeScannerBtn.classList.remove('hidden');
         if (cameraInfo) cameraInfo.classList.remove('hidden');
         
     } catch (error) {
@@ -246,8 +252,10 @@ async function initScannerSimple() {
         
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
+        const closeScannerBtn = document.getElementById('closeScannerBtn');
         if (startBtn) startBtn.style.display = 'inline-block';
         if (stopBtn) stopBtn.style.display = 'none';
+        if (closeScannerBtn) closeScannerBtn.classList.add('hidden');
     }
 }
 
@@ -269,17 +277,19 @@ function onScanSuccess(decodedText, decodedResult) {
     
     updateStatus(`📷 Código detectado: ${code}`, 'success');
     
-    if (html5QrCode) html5QrCode.pause();
+    // NÃO PAUSAR O SCANNER - Deixar aberto para múltiplos scans
+    // if (html5QrCode) html5QrCode.pause();
     
     document.getElementById('manualCode').value = code;
     searchProduct(code);
     
-    setTimeout(() => {
-        if (html5QrCode && isScanning) {
-            html5QrCode.resume();
-            updateStatus('Pronto para escanear novamente...', 'scanning');
-        }
-    }, 3000);
+    // NÃO retomar automaticamente - scanner fica aberto
+    // setTimeout(() => {
+    //     if (html5QrCode && isScanning) {
+    //         html5QrCode.resume();
+    //         updateStatus('Pronto para escanear novamente...', 'scanning');
+    //     }
+    // }, 3000);
 }
 
 async function stopScanner() {
@@ -299,14 +309,21 @@ async function stopScanner() {
     const scannerContainer = document.getElementById('scannerContainer');
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
+    const closeScannerBtn = document.getElementById('closeScannerBtn');
     const cameraInfo = document.getElementById('cameraInfo');
     
     if (scannerContainer) scannerContainer.style.display = 'none';
     if (startBtn) startBtn.style.display = 'inline-block';
     if (stopBtn) stopBtn.style.display = 'none';
+    if (closeScannerBtn) closeScannerBtn.classList.add('hidden');
     if (cameraInfo) cameraInfo.classList.add('hidden');
     
     updateStatus('Scanner parado. Clique em "Abrir Scanner" para iniciar novamente.', 'default');
+}
+
+function closeScanner() {
+    stopScanner();
+    updateStatus('Scanner fechado manualmente.', 'default');
 }
 
 // ========== FLUXO DE BUSCA PRINCIPAL ==========
@@ -325,6 +342,10 @@ async function searchProduct(code) {
         
         if (localResult && localResult.success && localResult.found) {
             currentProduct = localResult.product;
+            // Garantir que linha está disponível
+            if (!currentProduct.linha && localResult.product) {
+                currentProduct.linha = localResult.product.linha;
+            }
             showProductInfo(localResult.product, true);
             updateStatus(`✅ Encontrado no banco local`, 'success');
             switchTab('resultado');
@@ -808,6 +829,30 @@ function showProductInfo(product, isFromDatabase = true) {
         `;
     }
     
+    // Verificar se há preço antigo para mostrar comparação
+    let comparacaoHtml = '';
+    if (product.preco_antigo && product.preco_antigo !== product.preco) {
+        const precoAntigo = parseFloat(product.preco_antigo);
+        const precoAtual = parseFloat(product.preco);
+        const variacao = precoAtual - precoAntigo;
+        const porcentagem = ((variacao / precoAntigo) * 100).toFixed(1);
+        
+        comparacaoHtml = `
+            <div class="variacao-container ${variacao < 0 ? 'economia' : 'aumento'}">
+                <div class="variacao-header">
+                    <strong>${variacao < 0 ? '💰 Economia' : '📈 Aumento'}</strong>
+                    <span class="variacao-valor ${variacao < 0 ? 'economia' : 'aumento'}">
+                        ${variacao < 0 ? '▼' : '▲'} R$ ${Math.abs(variacao).toFixed(2)} (${porcentagem}%)
+                    </span>
+                </div>
+                <div class="variacao-detalhes">
+                    <span>Antigo: R$ ${precoAntigo.toFixed(2)}</span>
+                    <span>Atual: R$ ${precoAtual.toFixed(2)}</span>
+                </div>
+            </div>
+        `;
+    }
+    
     resultDiv.innerHTML = `
         <div class="product-card">
             ${imageHtml}
@@ -833,10 +878,12 @@ function showProductInfo(product, isFromDatabase = true) {
             </div>
         </div>
         
+        ${comparacaoHtml}
+        
         <div class="api-actions">
             ${isFromDatabase ? `
-            <button class="btn btn-warning" onclick="openEditModal('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', '${product.linha || ''}')">
-                ✏️ Editar
+            <button class="btn btn-warning" onclick="openEditModalCompleto('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', '${product.linha || ''}', '${encodeURIComponent(product.preco_antigo || product.preco || '')}')">
+                ✏️ Editar Preço
             </button>
             <button class="btn btn-danger" onclick="deleteProduct('${product.ean}', '${product.linha || ''}')">
                 🗑️ Excluir
@@ -852,7 +899,7 @@ function showProductInfo(product, isFromDatabase = true) {
         </div>
         
         <div class="product-actions-compras">
-            <button class="btn btn-carrinho" onclick="openCarrinhoModal('${product.ean}', '${encodeURIComponent(product.nome)}', '${product.preco || ''}')">
+            <button class="btn btn-carrinho" onclick="adicionarComVariacaoDireto('${product.ean}', '${encodeURIComponent(product.nome)}', '${product.preco || ''}', '${product.preco_antigo || product.preco || ''}')">
                 🛒 Adicionar ao Carrinho
             </button>
             <button class="btn btn-success" onclick="switchTab('compras')">
@@ -1060,9 +1107,7 @@ function atualizarInterfaceCarrinho() {
         const resumo = document.createElement('div');
         resumo.className = 'carrinho-resumo';
         resumo.innerHTML = `
-            <div style="background: #d1fae5; padding: 10px; border-radius: var(--radius-sm); margin-top: 10px; text-align: center;">
-                💰 <strong>Economia total:</strong> R$ ${economia.toFixed(2)}
-            </div>
+            💰 <strong>Economia total:</strong> R$ ${economia.toFixed(2)}
         `;
         carrinhoItens.appendChild(resumo);
     }
@@ -1171,10 +1216,10 @@ function renderizarProdutos(produtos) {
                 ${produto.marca ? `<div><small>${produto.marca}</small></div>` : ''}
                 <div class="preco">R$ ${produto.preco || '0.00'}</div>
                 <div class="produto-actions">
-                    <button class="btn btn-small" onclick="event.stopPropagation(); openCarrinhoModal('${produto.ean}', '${encodeURIComponent(produto.nome)}', '${produto.preco || ''}')">
+                    <button class="btn btn-small" onclick="event.stopPropagation(); adicionarComVariacaoDireto('${produto.ean}', '${encodeURIComponent(produto.nome)}', '${produto.preco || ''}', '${produto.preco || ''}')">
                         <i class="fas fa-cart-plus"></i>
                     </button>
-                    <button class="btn btn-small btn-warning" onclick="event.stopPropagation(); openEditModal('${produto.ean}', '${encodeURIComponent(produto.nome)}', '${encodeURIComponent(produto.marca || '')}', '${encodeURIComponent(produto.imagem || '')}', '${encodeURIComponent(produto.preco || '')}', '${produto.linha || ''}')">
+                    <button class="btn btn-small btn-warning" onclick="event.stopPropagation(); openEditModalCompleto('${produto.ean}', '${encodeURIComponent(produto.nome)}', '${encodeURIComponent(produto.marca || '')}', '${encodeURIComponent(produto.imagem || '')}', '${encodeURIComponent(produto.preco || '')}', '${produto.linha || ''}', '${encodeURIComponent(produto.preco || '')}')">
                         <i class="fas fa-edit"></i>
                     </button>
                 </div>
@@ -1273,24 +1318,138 @@ function switchTab(tab) {
 }
 
 // ========== MODAL FUNCTIONS ==========
-function openEditModal(ean, nome, marca, imagem, preco, linha) {
-    currentProduct = { ean, linha };
+function openEditModalCompleto(ean, nome, marca, imagem, preco, linha, precoAntigo = '') {
+    currentProduct = { 
+        ean, 
+        linha, 
+        precoAntigo: precoAntigo || preco,
+        nome: decodeURIComponent(nome)
+    };
     
-    document.getElementById('editNome').value = decodeURIComponent(nome);
-    document.getElementById('editMarca').value = decodeURIComponent(marca);
-    document.getElementById('editImagem').value = decodeURIComponent(imagem);
-    document.getElementById('editPreco').value = decodeURIComponent(preco);
+    const modalBody = document.getElementById('editModalBody');
+    
+    // Mostrar preço antigo se disponível
+    let precoAntigoHtml = '';
+    let variacaoHtml = '';
+    
+    if (precoAntigo && precoAntigo !== preco) {
+        const precoAntigoNum = parseFloat(decodeURIComponent(precoAntigo).replace(',', '.'));
+        const precoAtualNum = parseFloat(decodeURIComponent(preco).replace(',', '.'));
+        const variacao = precoAtualNum - precoAntigoNum;
+        const porcentagem = ((variacao / precoAntigoNum) * 100).toFixed(1);
+        
+        precoAntigoHtml = `
+            <div class="form-group">
+                <label><i class="fas fa-history"></i> Preço Antigo (R$)</label>
+                <input type="text" id="editPrecoAntigo" value="${decodeURIComponent(precoAntigo)}" readonly style="background:#f3f4f6;">
+                <small style="color:#6b7280; font-size:12px;">Preço anterior registrado no banco</small>
+            </div>
+        `;
+        
+        variacaoHtml = `
+            <div id="variacaoAtual" style="padding:10px; margin:10px 0; border-radius:var(--radius-sm); background:${variacao < 0 ? '#d1fae5' : '#fef3c7'}; border:1px solid ${variacao < 0 ? '#10b981' : '#f59e0b'};">
+                <strong>Variação atual:</strong> 
+                <span style="color:${variacao < 0 ? '#065f46' : '#92400e'}; font-weight:bold;">
+                    ${variacao < 0 ? '▼' : '▲'} R$ ${Math.abs(variacao).toFixed(2)} (${porcentagem}%)
+                </span>
+            </div>
+        `;
+    }
+    
+    modalBody.innerHTML = `
+        <div class="form-group">
+            <label><i class="fas fa-tag"></i> Nome do Produto *</label>
+            <input type="text" id="editNome" placeholder="Ex: Leite Integral 1L" value="${decodeURIComponent(nome)}" required>
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-industry"></i> Marca</label>
+            <input type="text" id="editMarca" placeholder="Ex: Itambé" value="${decodeURIComponent(marca)}">
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-image"></i> URL da Imagem</label>
+            <input type="text" id="editImagem" placeholder="https://exemplo.com/imagem.jpg" value="${decodeURIComponent(imagem)}">
+        </div>
+        ${precoAntigoHtml}
+        <div class="form-group">
+            <label><i class="fas fa-money-bill-wave"></i> Novo Preço (R$) *</label>
+            <input type="text" id="editPreco" placeholder="Ex: 6.90" value="${decodeURIComponent(preco)}" required>
+            <small style="color:#6b7280; font-size:12px;">Digite o novo preço atual</small>
+        </div>
+        ${variacaoHtml}
+        <div id="novaVariacaoInfo" style="display:none; padding:10px; margin-top:10px; border-radius:var(--radius-sm);">
+            <strong>Nova variação:</strong> <span id="novaVariacaoValor" style="font-weight:bold;"></span>
+        </div>
+    `;
+    
+    // Adicionar evento para calcular variação em tempo real
+    document.getElementById('editPreco').addEventListener('input', function() {
+        calcularNovaVariacao();
+    });
     
     document.getElementById('editModal').classList.add('active');
+    
+    // Calcular inicialmente
+    calcularNovaVariacao();
+}
+
+function calcularNovaVariacao() {
+    const precoAntigoInput = document.getElementById('editPrecoAntigo');
+    const novoPrecoInput = document.getElementById('editPreco');
+    const novaVariacaoDiv = document.getElementById('novaVariacaoInfo');
+    const novaVariacaoValor = document.getElementById('novaVariacaoValor');
+    
+    if (precoAntigoInput && novoPrecoInput.value) {
+        const antigo = parseFloat(precoAntigoInput.value.replace(',', '.'));
+        const novo = parseFloat(novoPrecoInput.value.replace(',', '.'));
+        
+        if (!isNaN(antigo) && !isNaN(novo)) {
+            const variacao = novo - antigo;
+            const porcentagem = ((variacao / antigo) * 100).toFixed(1);
+            
+            novaVariacaoDiv.style.display = 'block';
+            
+            if (variacao > 0) {
+                novaVariacaoValor.textContent = `↑ R$ ${variacao.toFixed(2)} (${porcentagem}% de aumento)`;
+                novaVariacaoDiv.style.background = '#fef3c7';
+                novaVariacaoDiv.style.border = '1px solid #f59e0b';
+                novaVariacaoValor.style.color = '#92400e';
+            } else if (variacao < 0) {
+                novaVariacaoValor.textContent = `↓ R$ ${Math.abs(variacao).toFixed(2)} (${porcentagem}% de economia)`;
+                novaVariacaoDiv.style.background = '#d1fae5';
+                novaVariacaoDiv.style.border = '1px solid #10b981';
+                novaVariacaoValor.style.color = '#065f46';
+            } else {
+                novaVariacaoValor.textContent = `R$ 0.00 (Sem alteração)`;
+                novaVariacaoDiv.style.background = '#f3f4f6';
+                novaVariacaoDiv.style.border = '1px solid #6b7280';
+                novaVariacaoValor.style.color = '#6b7280';
+            }
+        }
+    }
 }
 
 function openManualAddModal(code) {
     currentProduct = { ean: code };
     
-    document.getElementById('editNome').value = '';
-    document.getElementById('editMarca').value = '';
-    document.getElementById('editImagem').value = '';
-    document.getElementById('editPreco').value = '';
+    const modalBody = document.getElementById('editModalBody');
+    modalBody.innerHTML = `
+        <div class="form-group">
+            <label><i class="fas fa-tag"></i> Nome do Produto *</label>
+            <input type="text" id="editNome" placeholder="Ex: Leite Integral 1L" required>
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-industry"></i> Marca</label>
+            <input type="text" id="editMarca" placeholder="Ex: Itambé">
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-image"></i> URL da Imagem</label>
+            <input type="text" id="editImagem" placeholder="https://exemplo.com/imagem.jpg">
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-money-bill-wave"></i> Preço (R$) *</label>
+            <input type="text" id="editPreco" placeholder="Ex: 6.90" required>
+        </div>
+    `;
     
     document.getElementById('editModal').classList.add('active');
 }
@@ -1305,10 +1464,17 @@ async function saveEditedProduct() {
     const nome = document.getElementById('editNome').value.trim();
     const marca = document.getElementById('editMarca').value.trim();
     const imagem = document.getElementById('editImagem').value.trim();
-    const preco = document.getElementById('editPreco').value.trim();
+    const novoPreco = document.getElementById('editPreco').value.trim();
+    const precoAntigoInput = document.getElementById('editPrecoAntigo');
+    const precoAntigo = precoAntigoInput ? precoAntigoInput.value.trim() : currentProduct.precoAntigo || '';
     
     if (!nome) {
         showAlert('Por favor, informe o nome do produto', 'warning');
+        return;
+    }
+    
+    if (!novoPreco) {
+        showAlert('Por favor, informe o preço do produto', 'warning');
         return;
     }
     
@@ -1319,7 +1485,7 @@ async function saveEditedProduct() {
         nome: nome,
         marca: marca,
         imagem: imagem,
-        preco: preco,
+        preco: novoPreco,
         fonte: currentProduct.linha ? 'Editado' : 'Manual'
     };
     
@@ -1334,22 +1500,228 @@ async function saveEditedProduct() {
         await saveToGoogleSheets(productData);
     
     if (result.success) {
-        updateStatus('✅ Produto salvo no banco local!', 'success');
+        updateStatus('✅ Produto atualizado!', 'success');
         closeModal();
-        setTimeout(() => searchProduct(currentProduct.ean), 1000);
+        
+        // Aguardar um momento e mostrar produto atualizado com comparação
+        setTimeout(() => {
+            mostrarProdutoAtualizadoComComparacao(currentProduct.ean, novoPreco, precoAntigo);
+        }, 800);
+        
         carregarTodosProdutos();
     } else {
         updateStatus(`❌ Erro ao salvar: ${result.error || result.message}`, 'error');
     }
 }
 
+function mostrarProdutoAtualizadoComComparacao(ean, novoPreco, precoAntigo) {
+    // Rebuscar produto atualizado
+    searchProduct(ean).then(() => {
+        // Buscar o produto novamente para mostrar
+        searchInGoogleSheets(ean).then(result => {
+            if (result && result.success && result.found) {
+                showProductInfo(result.product, true);
+                
+                // Adicionar botão de adicionar ao carrinho com a nova variação
+                const resultDiv = document.getElementById('result');
+                const existingHtml = resultDiv.innerHTML;
+                
+                const precoAntigoNum = parseFloat(precoAntigo.replace(',', '.'));
+                const novoPrecoNum = parseFloat(novoPreco.replace(',', '.'));
+                const variacao = novoPrecoNum - precoAntigoNum;
+                
+                if (!isNaN(variacao) && precoAntigo && variacao !== 0) {
+                    const variacaoHtml = `
+                        <div style="margin-top: 15px; padding: 15px; background: ${variacao < 0 ? '#d1fae5' : '#fef3c7'}; border-radius: var(--radius-sm); border: 1px solid ${variacao < 0 ? '#10b981' : '#f59e0b'};">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div>
+                                    <strong>${variacao < 0 ? '💰 Economia Detectada' : '📈 Aumento Detectado'}</strong><br>
+                                    <small>Preço anterior: R$ ${precoAntigoNum.toFixed(2)}</small>
+                                </div>
+                                <div style="text-align: right;">
+                                    <span style="font-size: 18px; font-weight: bold; color: ${variacao < 0 ? '#065f46' : '#92400e'}">
+                                        ${variacao < 0 ? '▼' : '▲'} R$ ${Math.abs(variacao).toFixed(2)}
+                                    </span><br>
+                                    <small>${variacao < 0 ? 'Economia por unidade' : 'Aumento por unidade'}</small>
+                                </div>
+                            </div>
+                            <button class="btn btn-success" style="width: 100%;" 
+                                    onclick="adicionarComVariacaoEspecifica('${ean}', '${novoPreco}', '${precoAntigo}')">
+                                <i class="fas fa-cart-plus"></i> Adicionar ao Carrinho com esta Variação
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Inserir antes do product-actions-compras
+                    const actionsIndex = existingHtml.indexOf('product-actions-compras');
+                    if (actionsIndex !== -1) {
+                        const newHtml = existingHtml.substring(0, actionsIndex) + 
+                                      variacaoHtml + 
+                                      existingHtml.substring(actionsIndex);
+                        resultDiv.innerHTML = newHtml;
+                    }
+                }
+            }
+        });
+    });
+}
+
+async function adicionarComVariacaoEspecifica(ean, precoAtual, precoAntigo) {
+    // Buscar produto para obter nome
+    const produtoResult = await searchInGoogleSheets(ean);
+    if (produtoResult && produtoResult.success && produtoResult.found) {
+        const produto = produtoResult.product;
+        
+        // Adicionar diretamente ao carrinho com variação específica
+        const result = await adicionarAoCarrinho(produto, precoAtual, precoAntigo);
+        
+        if (result && result.success) {
+            showAlert('✅ Produto adicionado ao carrinho com a variação de preço!', 'success');
+            switchTab('compras');
+        } else {
+            showAlert('❌ Erro ao adicionar ao carrinho', 'error');
+        }
+    }
+}
+
+async function adicionarComVariacaoDireto(ean, nome, precoAtual, precoAntigo) {
+    const produto = {
+        ean: ean,
+        nome: decodeURIComponent(nome),
+        preco: precoAtual,
+        preco_antigo: precoAntigo
+    };
+    
+    // Usar o modal de edição para confirmar preços
+    currentProduct = { ean: ean, nome: decodeURIComponent(nome) };
+    
+    const modalBody = document.getElementById('editModalBody');
+    modalBody.innerHTML = `
+        <div style="padding: 10px; background: var(--light); border-radius: var(--radius-sm); margin-bottom: 15px;">
+            <strong>${decodeURIComponent(nome)}</strong><br>
+            <small>EAN: ${ean}</small>
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-money-bill-wave"></i> Preço Atual (R$)</label>
+            <input type="text" id="carrinhoPrecoAtual" placeholder="Ex: 6.90" value="${precoAtual}" required>
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-history"></i> Preço Anterior (R$)</label>
+            <input type="text" id="carrinhoPrecoAntigo" placeholder="Ex: 7.50" value="${precoAntigo}">
+            <small style="color:#6b7280; font-size:12px;">Deixe em branco se não houver preço anterior</small>
+        </div>
+        <div id="variacaoCarrinhoInfo" style="display:none; padding:10px; margin-top:10px; border-radius:var(--radius-sm);">
+            <strong>Variação:</strong> <span id="variacaoCarrinhoValor" style="font-weight:bold;"></span>
+        </div>
+    `;
+    
+    // Adicionar eventos para calcular variação
+    document.getElementById('carrinhoPrecoAtual').addEventListener('input', calcularVariacaoCarrinho);
+    document.getElementById('carrinhoPrecoAntigo').addEventListener('input', calcularVariacaoCarrinho);
+    
+    // Mudar título do modal
+    document.querySelector('#editModal .modal-header h3').innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
+    
+    // Mudar ação do botão salvar
+    const saveBtn = document.getElementById('saveEditBtn');
+    saveBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
+    saveBtn.onclick = confirmarAdicionarCarrinhoModal;
+    
+    document.getElementById('editModal').classList.add('active');
+    
+    // Calcular variação inicial
+    calcularVariacaoCarrinho();
+}
+
+function calcularVariacaoCarrinho() {
+    const precoAtualInput = document.getElementById('carrinhoPrecoAtual');
+    const precoAntigoInput = document.getElementById('carrinhoPrecoAntigo');
+    const variacaoDiv = document.getElementById('variacaoCarrinhoInfo');
+    const variacaoValor = document.getElementById('variacaoCarrinhoValor');
+    
+    if (precoAtualInput.value && precoAntigoInput.value) {
+        const atual = parseFloat(precoAtualInput.value.replace(',', '.'));
+        const antigo = parseFloat(precoAntigoInput.value.replace(',', '.'));
+        
+        if (!isNaN(atual) && !isNaN(antigo)) {
+            const variacao = atual - antigo;
+            const porcentagem = ((variacao / antigo) * 100).toFixed(1);
+            
+            variacaoDiv.style.display = 'block';
+            
+            if (variacao > 0) {
+                variacaoValor.textContent = `↑ R$ ${variacao.toFixed(2)} (${porcentagem}% de aumento)`;
+                variacaoDiv.style.background = '#fef3c7';
+                variacaoDiv.style.border = '1px solid #f59e0b';
+                variacaoValor.style.color = '#92400e';
+            } else if (variacao < 0) {
+                variacaoValor.textContent = `↓ R$ ${Math.abs(variacao).toFixed(2)} (${porcentagem}% de economia)`;
+                variacaoDiv.style.background = '#d1fae5';
+                variacaoDiv.style.border = '1px solid #10b981';
+                variacaoValor.style.color = '#065f46';
+            } else {
+                variacaoValor.textContent = `R$ 0.00 (Sem alteração)`;
+                variacaoDiv.style.background = '#f3f4f6';
+                variacaoDiv.style.border = '1px solid #6b7280';
+                variacaoValor.style.color = '#6b7280';
+            }
+        }
+    } else {
+        variacaoDiv.style.display = 'none';
+    }
+}
+
+async function confirmarAdicionarCarrinhoModal() {
+    const precoAtual = document.getElementById('carrinhoPrecoAtual').value;
+    const precoAntigo = document.getElementById('carrinhoPrecoAntigo').value;
+    
+    if (!precoAtual) {
+        showAlert('Informe o preço atual do produto', 'warning');
+        return;
+    }
+    
+    if (!currentProduct) return;
+    
+    const produtoData = {
+        ean: currentProduct.ean,
+        nome: currentProduct.nome || 'Produto',
+        preco: precoAtual,
+        preco_antigo: precoAntigo || precoAtual
+    };
+    
+    const result = await adicionarAoCarrinho(produtoData, precoAtual, precoAntigo || precoAtual);
+    
+    if (result && result.success) {
+        closeModal();
+        showAlert('✅ Produto adicionado ao carrinho!', 'success');
+        switchTab('compras');
+    } else {
+        showAlert('❌ Erro ao adicionar ao carrinho', 'error');
+    }
+}
+
 function editExternalProduct(code, name, brand, image, price, source) {
     currentProduct = { ean: code, source };
     
-    document.getElementById('editNome').value = decodeURIComponent(name);
-    document.getElementById('editMarca').value = decodeURIComponent(brand);
-    document.getElementById('editImagem').value = decodeURIComponent(image);
-    document.getElementById('editPreco').value = decodeURIComponent(price);
+    const modalBody = document.getElementById('editModalBody');
+    modalBody.innerHTML = `
+        <div class="form-group">
+            <label><i class="fas fa-tag"></i> Nome do Produto *</label>
+            <input type="text" id="editNome" placeholder="Ex: Leite Integral 1L" value="${decodeURIComponent(name)}" required>
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-industry"></i> Marca</label>
+            <input type="text" id="editMarca" placeholder="Ex: Itambé" value="${decodeURIComponent(brand)}">
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-image"></i> URL da Imagem</label>
+            <input type="text" id="editImagem" placeholder="https://exemplo.com/imagem.jpg" value="${decodeURIComponent(image)}">
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-money-bill-wave"></i> Preço (R$)</label>
+            <input type="text" id="editPreco" placeholder="Ex: 6.90" value="${decodeURIComponent(price)}">
+        </div>
+    `;
     
     document.getElementById('editModal').classList.add('active');
 }
@@ -1377,7 +1749,7 @@ async function saveExternalProductToDatabase(code, name, brand, image, price, so
     }
 }
 
-// ========== MODAL DO CARRINHO ==========
+// ========== MODAL DO CARRINHO (ANTIGO - MANTIDO PARA COMPATIBILIDADE) ==========
 function openCarrinhoModal(ean, nome, preco) {
     document.getElementById('carrinhoProdutoInfo').innerHTML = `
         <div style="padding: 10px; background: var(--light); border-radius: var(--radius-sm); margin-bottom: 15px;">
@@ -1475,6 +1847,7 @@ function isValidBarcode(code) {
     if (!/^\d+$/.test(code)) return false;
     if (code.length < 8 || code.length > 13) return false;
     if (code.length === 13) return validateEAN13(code);
+    if (code.length === 8) return validateEAN8(code);
     return true;
 }
 
@@ -1486,6 +1859,16 @@ function validateEAN13(code) {
     }
     const checksum = (10 - (sum % 10)) % 10;
     return checksum === parseInt(code[12]);
+}
+
+function validateEAN8(code) {
+    let sum = 0;
+    for (let i = 0; i < 7; i++) {
+        const digit = parseInt(code[i]);
+        sum += digit * (i % 2 === 0 ? 3 : 1);
+    }
+    const checksum = (10 - (sum % 10)) % 10;
+    return checksum === parseInt(code[7]);
 }
 
 function handleImageError(img) {
@@ -1517,8 +1900,9 @@ function checkAPIStatus() {
 window.searchManual = searchManual;
 window.initScanner = initScanner;
 window.stopScanner = stopScanner;
+window.closeScanner = closeScanner;
 window.searchOnline = searchOnline;
-window.openEditModal = openEditModal;
+window.openEditModalCompleto = openEditModalCompleto;
 window.openManualAddModal = openManualAddModal;
 window.closeModal = closeModal;
 window.saveEditedProduct = saveEditedProduct;
@@ -1538,5 +1922,8 @@ window.paginaAnterior = paginaAnterior;
 window.openCarrinhoModal = openCarrinhoModal;
 window.fecharCarrinhoModal = fecharCarrinhoModal;
 window.confirmarAdicionarCarrinho = confirmarAdicionarCarrinho;
+window.confirmarAdicionarCarrinhoModal = confirmarAdicionarCarrinhoModal;
 window.removerDoCarrinho = removerDoCarrinho;
 window.carregarEstatisticas = carregarEstatisticas;
+window.adicionarComVariacaoDireto = adicionarComVariacaoDireto;
+window.adicionarComVariacaoEspecifica = adicionarComVariacaoEspecifica;
