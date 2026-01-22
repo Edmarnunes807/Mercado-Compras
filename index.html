@@ -3,23 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner Inteligente + Sistema de Compras</title>
+    <title>Scanner + Compras</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1><i class="fas fa-barcode"></i> Scanner + Compras</h1>
-            <p>EAN → Banco Local • Carrinho • Histórico • Estatísticas</p>
+            <h1>Scanner + Compras</h1>
+            <p>Escanee • Compare Preços • Economize</p>
         </div>
         
         <div class="content">
             <!-- Busca Manual -->
             <div class="input-group">
                 <div class="input-with-icon">
-                    <i class="fas fa-search"></i>
+                    <i class="fas fa-barcode"></i>
                     <input type="text" id="manualCode" placeholder="Digite o código EAN (8-13 dígitos)" maxlength="13">
                 </div>
                 <button class="btn btn-primary" onclick="searchManual()">
@@ -172,7 +173,7 @@
     <div class="modal hidden" id="editModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modalTitle"><i class="fas fa-edit"></i> Editar Produto</h3>
+                <h3><i class="fas fa-edit"></i> Editar Produto</h3>
                 <button class="btn-close" onclick="closeModal()">
                     <i class="fas fa-times"></i>
                 </button>
