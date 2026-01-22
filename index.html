@@ -37,6 +37,11 @@
                     <i class="fas fa-stop"></i> Parar Scanner
                 </button>
                 
+                <!-- BOTÃO NOVO: Fechar Scanner -->
+                <button class="btn btn-secondary hidden" id="closeScannerBtn" onclick="closeScanner()">
+                    <i class="fas fa-times"></i> Fechar Scanner
+                </button>
+                
                 <div class="camera-info hidden" id="cameraInfo">
                     <i class="fas fa-video"></i> Usando câmera traseira com auto-foco
                 </div>
@@ -168,7 +173,7 @@
         </div>
     </div>
 
-    <!-- Modal para edição -->
+    <!-- Modal para edição de preço com variação -->
     <div class="modal hidden" id="editModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -177,23 +182,8 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label><i class="fas fa-tag"></i> Nome do Produto *</label>
-                    <input type="text" id="editNome" placeholder="Ex: Leite Integral 1L" required>
-                </div>
-                <div class="form-group">
-                    <label><i class="fas fa-industry"></i> Marca</label>
-                    <input type="text" id="editMarca" placeholder="Ex: Itambé">
-                </div>
-                <div class="form-group">
-                    <label><i class="fas fa-image"></i> URL da Imagem</label>
-                    <input type="text" id="editImagem" placeholder="https://exemplo.com/imagem.jpg">
-                </div>
-                <div class="form-group">
-                    <label><i class="fas fa-money-bill-wave"></i> Preço (R$)</label>
-                    <input type="text" id="editPreco" placeholder="Ex: 6.90">
-                </div>
+            <div class="modal-body" id="editModalBody">
+                <!-- Conteúdo dinâmico será injetado aqui -->
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal()">
@@ -206,7 +196,7 @@
         </div>
     </div>
 
-    <!-- Modal para carrinho -->
+    <!-- Modal para carrinho (SIMPLIFICADO - agora usa o modal de edição) -->
     <div class="modal hidden" id="carrinhoModal">
         <div class="modal-content">
             <div class="modal-header">
