@@ -1,283 +1,499 @@
 // ========== CONFIGURAÇÕES ==========
-const GOOGLE_SHEETS_API = "https://script.google.com/macros/s/AKfycbzgcibH369NS25K6afIYWfspNev0OcaXkRl2C2_HsmNGvdMTTK0OO4cn0VqmaC70GLGfg/exec";
+const GOOGLE_SHEETS_API = "https://script.google.com/macros/s/AKfycbwOF2ebfAxK_LS-HZrbVzYXnYxquCSDsJpH10ZAn_99qpj8I0EOi9zct5ZoMZ1kAMmFDQ/exec";
 const BLUESOFT_API_KEY = "7tF33vAL9xZs7ZRoSMBitg";
-const OPENFOODFACTS_PROXY = "https://api.allorigins.win/raw?url=";
 
 // ========== VARIÁVEIS GLOBAIS ==========
 let html5QrCode = null;
 let currentCameraId = null;
 let isScanning = false;
+let lastScanned = '';
+let lastScanTime = 0;
 let currentProduct = null;
-let modalData = {
-    product: null,
-    oldPrice: 0,
-    newPrice: 0
-};
+let carrinho = [];
+let historico = [];
+let todosProdutos = [];
+let paginaAtual = 1;
+let itensPorPagina = 10;
+
+const REAR_CAMERA_KEYWORDS = ["back", "rear", "environment", "traseira", "camera 0"];
 
 // ========== INICIALIZAÇÃO ==========
 document.addEventListener('DOMContentLoaded', function() {
-    // Configurar eventos
-    setupEventListeners();
+    document.getElementById('manualCode').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') searchManual();
+    });
     
-    // Verificar API
+    // Configurar botão de salvar no modal
+    document.getElementById('saveEditBtn').onclick = saveEditedProduct;
+    
+    // Verificar status da API
     checkAPIStatus();
-    
-    // Carregar estatísticas iniciais
-    loadStats();
-    
-    // Testar conexão
-    setTimeout(testConnection, 1000);
-    
-    // Carregar carrinho inicial
-    loadCart();
 });
 
-function setupEventListeners() {
-    // Busca por Enter
-    document.getElementById('manualCode').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') searchProduct();
-    });
-    
-    // Preço modal
-    document.getElementById('modalCurrentPrice').addEventListener('input', calculateVariationModal);
-    
-    // Filtro de produtos
-    document.getElementById('searchProducts').addEventListener('input', filterProducts);
-}
-
-// ========== NAVEGAÇÃO ENTRE ABAS ==========
-function switchTab(tabName) {
-    // Remover active de todas as abas
-    document.querySelectorAll('.tab').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    
-    // Ativar aba selecionada
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-    document.getElementById(`${tabName}-tab`).classList.add('active');
-    
-    // Carregar dados da aba
-    switch(tabName) {
-        case 'produtos':
-            loadProducts();
-            break;
-        case 'compras':
-            loadCart();
-            break;
-        case 'historico':
-            loadHistory();
-            break;
-    }
-}
-
-// ========== SCANNER ==========
+// ========== FUNÇÕES DO SCANNER ==========
 async function initScanner() {
     if (isScanning) return;
     
     try {
-        updateStatus('Iniciando scanner...', 'info');
+        updateStatus('Iniciando câmera...', 'scanning');
         
-        // Mostrar scanner
-        document.getElementById('scannerContainer').style.display = 'block';
-        document.getElementById('startBtn').style.display = 'none';
-        document.getElementById('cameraInfo').classList.remove('hidden');
-        document.getElementById('cameraControls').classList.remove('hidden');
+        // Mostrar interface do scanner
+        const scannerContainer = document.getElementById('scannerContainer');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const cameraInfo = document.getElementById('cameraInfo');
         
-        // Configuração
+        if (scannerContainer) scannerContainer.style.display = 'block';
+        if (startBtn) startBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'inline-block';
+        if (cameraInfo) cameraInfo.classList.remove('hidden');
+        
         const config = {
             fps: 30,
-            qrbox: { width: 250, height: 150 },
+            qrbox: { width: 300, height: 200 },
             aspectRatio: 4/3,
             formatsToSupport: [
                 Html5QrcodeSupportedFormats.EAN_13,
                 Html5QrcodeSupportedFormats.EAN_8,
                 Html5QrcodeSupportedFormats.UPC_A,
                 Html5QrcodeSupportedFormats.UPC_E,
-                Html5QrcodeSupportedFormats.CODE_128
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39
             ]
         };
         
-        // Inicializar scanner
+        if (typeof Html5Qrcode === 'undefined') {
+            throw new Error('Biblioteca de scanner não carregada');
+        }
+        
         html5QrCode = new Html5Qrcode("reader");
         
-        // Tentar câmera traseira
-        const cameras = await Html5Qrcode.getCameras();
-        const rearCamera = cameras.find(cam => 
-            cam.label.toLowerCase().includes('back') || 
-            cam.label.toLowerCase().includes('traseira')
-        );
+        // Tentar encontrar câmera traseira
+        const rearCameraId = await findRearCamera();
         
-        if (rearCamera) {
-            await html5QrCode.start(rearCamera.id, config, onScanSuccess, onScanError);
-            currentCameraId = rearCamera.id;
+        if (rearCameraId) {
+            currentCameraId = rearCameraId;
+            
+            const cameraConfig = {
+                ...config,
+                videoConstraints: {
+                    deviceId: { exact: rearCameraId },
+                    width: { min: 1280, ideal: 1920, max: 2560 },
+                    height: { min: 720, ideal: 1080, max: 1440 },
+                    frameRate: { ideal: 30, min: 24 }
+                }
+            };
+            
+            await html5QrCode.start(
+                rearCameraId,
+                cameraConfig,
+                onScanSuccess,
+                onScanError
+            );
+            
         } else {
-            await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanError);
+            // Fallback para modo ambiente
+            const fallbackConfig = {
+                ...config,
+                videoConstraints: {
+                    facingMode: { exact: "environment" },
+                    width: { min: 1280, ideal: 1920 },
+                    height: { min: 720, ideal: 1080 }
+                }
+            };
+            
+            await html5Qrcode.start(
+                { facingMode: "environment" },
+                fallbackConfig,
+                onScanSuccess,
+                onScanError
+            );
+            
             currentCameraId = "environment";
         }
         
-        updateStatus('Scanner ativo! Aponte para um código de barras.', 'success');
+        updateStatus('Scanner ativo! Aponte para um código de barras...', 'success');
         isScanning = true;
         
     } catch (error) {
         console.error('Erro ao iniciar scanner:', error);
-        updateStatus('Erro ao iniciar scanner: ' + error.message, 'danger');
+        await handleScannerError(error);
     }
 }
 
-function stopScanner() {
-    if (html5QrCode && isScanning) {
-        html5QrCode.stop().then(() => {
-            html5QrCode.clear();
-            isScanning = false;
-            currentCameraId = null;
-            
-            document.getElementById('scannerContainer').style.display = 'none';
-            document.getElementById('startBtn').style.display = 'inline-block';
-            document.getElementById('cameraInfo').classList.add('hidden');
-            document.getElementById('cameraControls').classList.add('hidden');
-            
-            updateStatus('Scanner parado.', 'info');
+async function findRearCamera() {
+    try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+            return null;
+        }
+        
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        const exactCamera = videoDevices.find(device => 
+            device.label && device.label.includes("camera 0, facing back")
+        );
+        
+        if (exactCamera) return exactCamera.deviceId;
+        
+        const rearCamera = videoDevices.find(device => {
+            if (!device.label) return false;
+            const label = device.label.toLowerCase();
+            return REAR_CAMERA_KEYWORDS.some(keyword => 
+                label.includes(keyword.toLowerCase())
+            );
         });
+        
+        if (rearCamera) return rearCamera.deviceId;
+        
+        if (videoDevices.length > 1) {
+            return videoDevices[videoDevices.length - 1].deviceId;
+        }
+        
+        if (videoDevices.length === 1) {
+            return videoDevices[0].deviceId;
+        }
+        
+        return null;
+        
+    } catch (error) {
+        console.error("Erro ao encontrar câmera:", error);
+        return null;
     }
 }
 
-function onScanSuccess(decodedText) {
-    const code = decodedText.trim();
-    
-    // Validar EAN
-    if (!isValidEAN(code)) {
-        updateStatus('Código EAN inválido', 'danger');
-        return;
+async function handleScannerError(error) {
+    if (html5QrCode) {
+        try {
+            await html5QrCode.stop();
+            html5QrCode.clear();
+        } catch (e) {
+            console.log('Erro ao parar scanner:', e);
+        }
     }
     
-    updateStatus(`Código detectado: ${code}`, 'success');
+    isScanning = false;
+    html5QrCode = null;
+    currentCameraId = null;
     
-    // Preencher campo e buscar
-    document.getElementById('manualCode').value = code;
-    searchProduct();
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const scannerContainer = document.getElementById('scannerContainer');
+    const cameraInfo = document.getElementById('cameraInfo');
     
-    // Parar scanner temporariamente
-    stopScanner();
+    if (startBtn) startBtn.style.display = 'inline-block';
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (scannerContainer) scannerContainer.style.display = 'none';
+    if (cameraInfo) cameraInfo.classList.add('hidden');
+    
+    if (error.message && error.message.includes('permission')) {
+        updateStatus('Permissão da câmera negada. Permita o acesso à câmera nas configurações do navegador.', 'error');
+    } else if (error.message && error.message.includes('NotFoundError')) {
+        updateStatus('Nenhuma câmera encontrada no dispositivo.', 'error');
+    } else if (error.message && error.message.includes('NotSupportedError')) {
+        updateStatus('Dispositivo não suporta scanner de câmera.', 'error');
+    } else if (error.message && error.message.includes('NotAllowedError')) {
+        updateStatus('Acesso à câmera não permitido.', 'error');
+    } else if (error.message && error.message.includes('OverconstrainedError')) {
+        updateStatus('Tentando modo simplificado...', 'warning');
+        setTimeout(() => initScannerSimple(), 1000);
+        return;
+    } else {
+        updateStatus('Erro ao iniciar o scanner: ' + (error.message || 'Erro desconhecido'), 'error');
+    }
+}
+
+async function initScannerSimple() {
+    try {
+        updateStatus('Iniciando modo simplificado...', 'scanning');
+        
+        const simpleConfig = {
+            fps: 10,
+            qrbox: { width: 250, height: 150 },
+            formatsToSupport: [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128
+            ]
+        };
+        
+        html5QrCode = new Html5Qrcode("reader");
+        
+        await html5QrCode.start(
+            { facingMode: "environment" },
+            simpleConfig,
+            onScanSuccess,
+            onScanError
+        );
+        
+        updateStatus('Scanner ativo (modo simplificado)!', 'success');
+        isScanning = true;
+        currentCameraId = "environment";
+        
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const scannerContainer = document.getElementById('scannerContainer');
+        const cameraInfo = document.getElementById('cameraInfo');
+        
+        if (scannerContainer) scannerContainer.style.display = 'block';
+        if (startBtn) startBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'inline-block';
+        if (cameraInfo) cameraInfo.classList.remove('hidden');
+        
+    } catch (error) {
+        console.error('Erro no modo simplificado:', error);
+        updateStatus('Falha ao iniciar scanner em qualquer modo.', 'error');
+        
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        if (startBtn) startBtn.style.display = 'inline-block';
+        if (stopBtn) stopBtn.style.display = 'none';
+    }
 }
 
 function onScanError(error) {
-    // Ignorar erros comuns de leitura
-    if (!error.includes("No MultiFormat Readers")) {
+    if (!error || typeof error !== 'string' || !error.includes("No MultiFormat Readers")) {
         console.log('Erro de scan:', error);
     }
 }
 
-// ========== BUSCA DE PRODUTOS ==========
-async function searchProduct() {
-    const ean = document.getElementById('manualCode').value.trim();
+function onScanSuccess(decodedText, decodedResult) {
+    const now = Date.now();
+    const code = decodedText.trim();
     
-    if (!ean || !isValidEAN(ean)) {
-        showAlert('Digite um EAN válido (8-13 dígitos)', 'danger');
+    if (!isValidBarcode(code)) return;
+    if (code === lastScanned && (now - lastScanTime) < 2000) return;
+    
+    lastScanned = code;
+    lastScanTime = now;
+    
+    updateStatus(`📷 Código detectado: ${code}`, 'success');
+    
+    if (html5QrCode) html5QrCode.pause();
+    
+    document.getElementById('manualCode').value = code;
+    searchProduct(code);
+    
+    setTimeout(() => {
+        if (html5QrCode && isScanning) {
+            html5QrCode.resume();
+            updateStatus('Pronto para escanear novamente...', 'scanning');
+        }
+    }, 3000);
+}
+
+async function stopScanner() {
+    if (html5QrCode && isScanning) {
+        try {
+            await html5QrCode.stop();
+        } catch (error) {
+            console.log('Erro ao parar scanner:', error);
+        }
+        html5QrCode.clear();
+    }
+    
+    isScanning = false;
+    html5QrCode = null;
+    currentCameraId = null;
+    
+    const scannerContainer = document.getElementById('scannerContainer');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const cameraInfo = document.getElementById('cameraInfo');
+    
+    if (scannerContainer) scannerContainer.style.display = 'none';
+    if (startBtn) startBtn.style.display = 'inline-block';
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (cameraInfo) cameraInfo.classList.add('hidden');
+    
+    updateStatus('Scanner parado. Clique em "Abrir Scanner" para iniciar novamente.', 'default');
+}
+
+// ========== FLUXO DE BUSCA PRINCIPAL ==========
+async function searchProduct(code) {
+    if (!code || !isValidBarcode(code)) {
+        showAlert('Código EAN inválido. Use 8-13 dígitos.', 'error');
         return;
     }
     
-    // Limpar resultados anteriores
     clearResult();
-    updateStatus(`Buscando produto ${ean}...`, 'info');
+    updateStatus(`Buscando produto ${code}...`, 'scanning');
     
     try {
-        // 1. Buscar no Banco Local
-        updateStatus('Buscando no banco local...', 'info');
-        const localProduct = await searchInDatabase(ean);
+        // 1º PASSO: Buscar no Banco Local
+        const localResult = await searchInGoogleSheets(code);
         
-        if (localProduct) {
-            showProductResult(localProduct, true);
-            updateStatus('Produto encontrado no banco local!', 'success');
+        if (localResult && localResult.success && localResult.found) {
+            currentProduct = localResult.product;
+            showProductInfo(localResult.product, true);
+            updateStatus(`✅ Encontrado no banco local`, 'success');
+            switchTab('resultado');
             return;
         }
         
-        // 2. Buscar no Open Food Facts
-        updateStatus('Buscando no Open Food Facts...', 'info');
-        const offProduct = await searchOpenFoodFacts(ean);
+        // 2º PASSO: Open Food Facts
+        updateStatus('Não encontrado localmente. Buscando no Open Food Facts...', 'scanning');
+        const openFoodProduct = await searchOpenFoodFacts(code);
         
-        if (offProduct) {
-            // Salvar automaticamente no banco
-            await saveProductToDatabase(offProduct);
-            showProductResult(offProduct, false);
-            updateStatus('Produto encontrado no Open Food Facts!', 'success');
+        if (openFoodProduct && openFoodProduct.name) {
+            showExternalProductInfo(openFoodProduct, code, 'Open Food Facts');
+            updateStatus(`✅ Encontrado no Open Food Facts`, 'success');
+            switchTab('resultado');
             return;
         }
         
-        // 3. Buscar no Bluesoft
-        updateStatus('Buscando no Bluesoft Cosmos...', 'info');
-        const bluesoftProduct = await searchBluesoft(ean);
+        // 3º PASSO: Bluesoft
+        updateStatus('Não encontrado no Open Food Facts. Buscando no Bluesoft...', 'scanning');
+        const bluesoftProduct = await searchBluesoftCosmos(code);
         
-        if (bluesoftProduct) {
-            // Salvar automaticamente no banco
-            await saveProductToDatabase(bluesoftProduct);
-            showProductResult(bluesoftProduct, false);
-            updateStatus('Produto encontrado no Bluesoft Cosmos!', 'success');
+        if (bluesoftProduct && bluesoftProduct.name) {
+            showExternalProductInfo(bluesoftProduct, code, 'Bluesoft Cosmos');
+            updateStatus(`✅ Encontrado no Bluesoft Cosmos`, 'success');
+            switchTab('resultado');
             return;
         }
         
-        // Produto não encontrado
-        showNotFoundResult(ean);
-        updateStatus('Produto não encontrado em nenhuma fonte.', 'danger');
+        // 4º PASSO: Cadastrar manualmente
+        updateStatus('❌ Produto não encontrado em nenhuma fonte', 'error');
+        showAddToDatabaseForm(code);
+        switchTab('resultado');
         
     } catch (error) {
-        console.error('Erro na busca:', error);
-        updateStatus('Erro na busca: ' + error.message, 'danger');
-        showErrorResult('Erro na busca', 'Tente novamente mais tarde.');
+        console.error('Erro no fluxo de busca:', error);
+        updateStatus('Erro na busca. Tente novamente.', 'error');
+        showErrorResult('Erro na busca', 'Ocorreu um erro ao buscar o produto.');
+        switchTab('resultado');
     }
 }
 
-// ========== FUNÇÕES DE BUSCA ==========
-async function searchInDatabase(ean) {
-    try {
-        const url = `${GOOGLE_SHEETS_API}?operation=search&ean=${ean}`;
-        const response = await fetch(url);
-        const result = await response.json();
-        
-        if (result.success && result.found) {
-            return {
-                ean: result.product.ean,
-                nome: result.product.nome,
-                marca: result.product.marca || '',
-                imagem: result.product.imagem || '',
-                preco: result.product.preco || '0',
-                fonte: 'Banco Local',
-                linha: result.product.linha
-            };
-        }
+// ========== BUSCA MANUAL ==========
+function searchManual() {
+    const code = document.getElementById('manualCode').value.trim();
+    if (!code || code.length < 8) {
+        showAlert('Digite um código de barras válido (8-13 dígitos)', 'warning');
+        return;
+    }
+    searchProduct(code);
+}
+
+// ========== BANCO LOCAL (GOOGLE SHEETS) ==========
+async function searchInGoogleSheets(ean) {
+    if (!GOOGLE_SHEETS_API) {
+        console.warn("URL do Google Sheets não configurada");
         return null;
+    }
+    
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=search&ean=${encodeURIComponent(ean)}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        return await response.json();
     } catch (error) {
-        console.error('Erro ao buscar no banco:', error);
+        console.error('Erro ao buscar no Google Sheets:', error);
         return null;
     }
 }
 
-async function searchOpenFoodFacts(ean) {
+async function saveToGoogleSheets(productData) {
     try {
-        const url = `${OPENFOODFACTS_PROXY}https://world.openfoodfacts.org/api/v0/product/${ean}.json`;
+        const params = new URLSearchParams({
+            operation: 'save',
+            ean: productData.ean,
+            nome: productData.nome || '',
+            marca: productData.marca || '',
+            imagem: productData.imagem || '',
+            preco: productData.preco || '',
+            fonte: productData.fonte || 'Manual'
+        });
+        
+        const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
         const response = await fetch(url);
         
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Erro ao salvar no Google Sheets:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function updateInGoogleSheets(productData) {
+    try {
+        const params = new URLSearchParams({
+            operation: 'update',
+            ean: productData.ean,
+            nome: productData.nome || '',
+            marca: productData.marca || '',
+            imagem: productData.imagem || '',
+            preco: productData.preco || '',
+            fonte: productData.fonte || 'Editado'
+        });
+        
+        if (productData.linha) {
+            params.append('linha', productData.linha);
+        }
+        
+        const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
+        const response = await fetch(url);
+        return await response.json();
+    } catch (error) {
+        console.error('Erro ao atualizar:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function deleteFromGoogleSheets(ean, linha) {
+    try {
+        const params = new URLSearchParams({
+            operation: 'delete',
+            ean: ean
+        });
+        
+        if (linha) {
+            params.append('linha', linha);
+        }
+        
+        const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
+        const response = await fetch(url);
+        return await response.json();
+    } catch (error) {
+        console.error('Erro ao excluir:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// ========== APIS EXTERNAS ==========
+async function searchOpenFoodFacts(code) {
+    try {
+        const proxyUrl = 'https://api.allorigins.win/raw?url=';
+        const apiUrl = `https://world.openfoodfacts.org/api/v0/product/${code}.json`;
+        
+        const response = await fetch(proxyUrl + encodeURIComponent(apiUrl));
         if (!response.ok) return null;
         
         const data = await response.json();
         
         if (data.status === 1 && data.product) {
             return {
-                ean: ean,
-                nome: data.product.product_name_pt || 
-                      data.product.product_name || 
+                name: data.product.product_name || 
+                      data.product.product_name_pt || 
                       data.product.product_name_en || 
                       'Produto',
-                marca: data.product.brands || data.product.brand || '',
-                imagem: data.product.image_front_url || 
+                brand: data.product.brands || data.product.brand || '',
+                image: data.product.image_front_url || 
                        data.product.image_url || 
                        data.product.image_front_small_url || 
-                       '',
-                preco: '0',
-                fonte: 'Open Food Facts'
+                       data.product.image_thumb_url || 
+                       null,
+                price: data.product.product_quantity || '',
+                source: 'Open Food Facts'
             };
         }
         return null;
@@ -287,14 +503,15 @@ async function searchOpenFoodFacts(ean) {
     }
 }
 
-async function searchBluesoft(ean) {
+async function searchBluesoftCosmos(code) {
     try {
         const response = await fetch(
-            `https://api.cosmos.bluesoft.com.br/gtins/${ean}.json`,
+            `https://api.cosmos.bluesoft.com.br/gtins/${code}.json`,
             {
                 headers: {
                     'X-Cosmos-Token': BLUESOFT_API_KEY,
-                    'User-Agent': 'CompraInteligente/1.0'
+                    'User-Agent': 'Cosmos-API-Request',
+                    'Accept': 'application/json'
                 }
             }
         );
@@ -304,12 +521,11 @@ async function searchBluesoft(ean) {
         const data = await response.json();
         
         return {
-            ean: ean,
-            nome: data.description || 'Produto',
-            marca: data.brand?.name || data.brand_name || '',
-            imagem: data.thumbnail || data.image || '',
-            preco: data.price || data.average_price || '0',
-            fonte: 'Bluesoft Cosmos'
+            name: data.description || 'Produto',
+            brand: data.brand?.name || data.brand_name || data.manufacturer || '',
+            image: data.thumbnail || data.image || null,
+            price: data.price || data.average_price || '',
+            source: 'Bluesoft Cosmos'
         };
         
     } catch (error) {
@@ -318,805 +534,1009 @@ async function searchBluesoft(ean) {
     }
 }
 
-async function saveProductToDatabase(product) {
+// ========== SISTEMA DE COMPRAS ==========
+async function adicionarAoCarrinho(produto, precoAtual, precoAntigo) {
     try {
-        const params = new URLSearchParams({
-            operation: 'save',
-            ean: product.ean,
-            nome: product.nome,
-            marca: product.marca || '',
-            imagem: product.imagem || '',
-            preco: product.preco || '0',
-            fonte: product.fonte
-        });
-        
-        const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
-        await fetch(url);
-        
-    } catch (error) {
-        console.error('Erro ao salvar produto:', error);
-    }
-}
-
-// ========== EXIBIÇÃO DE RESULTADOS ==========
-function showProductResult(product, fromDatabase) {
-    const container = document.getElementById('resultContainer');
-    
-    const price = parseFloat(product.preco || 0).toFixed(2);
-    
-    let imageHtml = product.imagem ? 
-        `<img src="${product.imagem}" alt="${product.nome}" onerror="this.src='';">` :
-        `<i class="fas fa-box"></i>`;
-    
-    container.innerHTML = `
-        <div class="product-result-card">
-            <div class="product-image-container">
-                ${imageHtml}
-            </div>
-            <div class="product-details">
-                <div class="product-title">${product.nome}</div>
-                <div class="product-meta">
-                    <span class="product-meta-item">
-                        <i class="fas fa-barcode"></i> ${product.ean}
-                    </span>
-                    ${product.marca ? `
-                    <span class="product-meta-item">
-                        <i class="fas fa-industry"></i> ${product.marca}
-                    </span>` : ''}
-                    <span class="product-meta-item">
-                        <i class="fas fa-database"></i> ${product.fonte}
-                    </span>
-                </div>
-                <div class="product-price">
-                    <i class="fas fa-tag"></i> R$ ${price}
-                </div>
-                <div class="product-actions">
-                    <button class="btn btn-primary" onclick="openPriceModal(${JSON.stringify(product).replace(/"/g, '&quot;')})">
-                        <i class="fas fa-cart-plus"></i> Adicionar ao Carrinho
-                    </button>
-                    ${fromDatabase ? `
-                    <button class="btn btn-secondary" onclick="editProduct(${product.linha || 'null'})">
-                        <i class="fas fa-edit"></i> Editar
-                    </button>
-                    ` : ''}
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-function showNotFoundResult(ean) {
-    const container = document.getElementById('resultContainer');
-    
-    container.innerHTML = `
-        <div class="product-result-card">
-            <div class="product-image-container">
-                <i class="fas fa-question-circle"></i>
-            </div>
-            <div class="product-details">
-                <div class="product-title">Produto não encontrado</div>
-                <p>O produto com EAN <strong>${ean}</strong> não foi encontrado em nenhuma fonte.</p>
-                <div class="product-actions">
-                    <button class="btn btn-warning" onclick="addProductManually('${ean}')">
-                        <i class="fas fa-plus"></i> Cadastrar Manualmente
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-function showErrorResult(title, message) {
-    const container = document.getElementById('resultContainer');
-    
-    container.innerHTML = `
-        <div class="product-result-card">
-            <div class="product-image-container">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <div class="product-details">
-                <div class="product-title">${title}</div>
-                <p>${message}</p>
-                <div class="product-actions">
-                    <button class="btn btn-primary" onclick="searchProduct()">
-                        <i class="fas fa-redo"></i> Tentar Novamente
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-}
-
-function clearResult() {
-    document.getElementById('resultContainer').innerHTML = '';
-}
-
-// ========== MODAL DE PREÇO ==========
-function openPriceModal(product) {
-    currentProduct = product;
-    
-    // Preencher informações do produto
-    document.getElementById('modalProductName').textContent = product.nome;
-    document.getElementById('modalProductEAN').textContent = `EAN: ${product.ean}`;
-    document.getElementById('modalProductBrand').textContent = `Marca: ${product.marca || 'Não informada'}`;
-    
-    // Imagem
-    const imgContainer = document.getElementById('modalProductImage');
-    if (product.imagem) {
-        imgContainer.innerHTML = `<img src="${product.imagem}" alt="${product.nome}" style="width:100%;height:100%;object-fit:contain;">`;
-    } else {
-        imgContainer.innerHTML = '<i class="fas fa-image"></i>';
-    }
-    
-    // Preços
-    const oldPrice = parseFloat(product.preco || 0);
-    modalData.oldPrice = oldPrice;
-    modalData.product = product;
-    
-    document.getElementById('modalOldPrice').textContent = `R$ ${oldPrice.toFixed(2)}`;
-    document.getElementById('modalCurrentPrice').value = oldPrice.toFixed(2);
-    
-    // Calcular variação inicial
-    calculateVariationModal();
-    
-    // Mostrar modal
-    document.getElementById('priceModal').classList.add('active');
-}
-
-function closePriceModal() {
-    document.getElementById('priceModal').classList.remove('active');
-    currentProduct = null;
-    modalData = { product: null, oldPrice: 0, newPrice: 0 };
-}
-
-function calculateVariationModal() {
-    const input = document.getElementById('modalCurrentPrice');
-    const newPrice = parseFloat(input.value) || 0;
-    const oldPrice = modalData.oldPrice;
-    
-    modalData.newPrice = newPrice;
-    
-    // Calcular variação
-    const variationValue = newPrice - oldPrice;
-    const variationPercent = oldPrice > 0 ? (variationValue / oldPrice) * 100 : 0;
-    
-    // Atualizar display
-    document.getElementById('modalVariationValue').textContent = 
-        `R$ ${variationValue.toFixed(2)}`;
-    document.getElementById('modalVariationPercent').textContent = 
-        `${variationPercent.toFixed(1)}%`;
-    
-    // Indicador visual
-    const indicator = document.getElementById('priceIndicator');
-    const icon = indicator.querySelector('.indicator-icon');
-    const text = indicator.querySelector('.indicator-text');
-    
-    if (variationValue < 0) {
-        // Mais barato
-        indicator.className = 'price-indicator cheaper';
-        icon.innerHTML = '<i class="fas fa-arrow-down"></i>';
-        text.textContent = `Economia de R$ ${Math.abs(variationValue).toFixed(2)}`;
-        indicator.classList.add('cheaper');
-        indicator.classList.remove('expensive');
-    } else if (variationValue > 0) {
-        // Mais caro
-        indicator.className = 'price-indicator expensive';
-        icon.innerHTML = '<i class="fas fa-arrow-up"></i>';
-        text.textContent = `Aumento de R$ ${variationValue.toFixed(2)}`;
-        indicator.classList.add('expensive');
-        indicator.classList.remove('cheaper');
-    } else {
-        // Mesmo preço
-        indicator.className = 'price-indicator';
-        icon.innerHTML = '<i class="fas fa-minus"></i>';
-        text.textContent = 'Mesmo preço';
-        indicator.classList.remove('cheaper', 'expensive');
-    }
-}
-
-async function addToCartFromModal() {
-    if (!modalData.product || modalData.newPrice <= 0) {
-        showAlert('Digite um preço válido maior que zero', 'danger');
-        return;
-    }
-    
-    try {
-        updateStatus('Adicionando ao carrinho...', 'info');
-        
-        // Preparar dados
         const params = new URLSearchParams({
             operation: 'addToCart',
-            ean: modalData.product.ean,
-            nome: modalData.product.nome,
-            marca: modalData.product.marca || '',
-            imagem: modalData.product.imagem || '',
-            preco_atual: modalData.newPrice.toString(),
-            preco_antigo: modalData.oldPrice.toString(),
-            variacao: (modalData.newPrice - modalData.oldPrice).toFixed(2)
+            ean: produto.ean,
+            preco_atual: precoAtual,
+            preco_antigo: precoAntigo || produto.preco_antigo || produto.preco || '0'
         });
         
-        // Enviar para API
         const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
         const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
         const result = await response.json();
         
         if (result.success) {
-            showAlert('Produto adicionado ao carrinho!', 'success');
-            closePriceModal();
-            
-            // Atualizar carrinho
-            loadCart();
-            
-            // Atualizar contador
-            updateCartCount();
-            
-            // Se estava na aba carrinho, recarregar
-            if (document.querySelector('[data-tab="compras"]').classList.contains('active')) {
-                switchTab('compras');
-            }
-            
+            updateStatus('✅ Adicionado ao carrinho!', 'success');
+            carregarCarrinho();
+            return result;
         } else {
-            showAlert('Erro ao adicionar ao carrinho: ' + result.message, 'danger');
+            throw new Error(result.message || 'Erro ao adicionar ao carrinho');
         }
-        
     } catch (error) {
         console.error('Erro ao adicionar ao carrinho:', error);
-        showAlert('Erro ao adicionar ao carrinho', 'danger');
+        updateStatus('❌ Erro ao adicionar ao carrinho', 'error');
+        return null;
     }
 }
 
-// ========== CARRINHO ==========
-async function loadCart() {
+async function carregarCarrinho() {
     try {
         const url = `${GOOGLE_SHEETS_API}?operation=getCart`;
         const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
         const result = await response.json();
         
         if (result.success) {
-            displayCart(result);
-            updateCartSummary(result);
-        } else {
-            displayEmptyCart();
+            carrinho = result.items || [];
+            atualizarInterfaceCarrinho();
+            return result;
         }
-        
+        return { success: false };
     } catch (error) {
         console.error('Erro ao carregar carrinho:', error);
-        displayEmptyCart();
+        return { success: false, error: error.message };
     }
 }
 
-function displayCart(cartData) {
-    const tbody = document.getElementById('cartBody');
-    const checkoutBtn = document.getElementById('checkoutBtn');
-    const clearBtn = document.getElementById('clearCartBtn');
+async function limparCarrinho() {
+    if (!carrinho.length) return;
     
-    if (!cartData.items || cartData.items.length === 0) {
-        displayEmptyCart();
-        checkoutBtn.disabled = true;
-        clearBtn.disabled = true;
+    if (!confirm(`Tem certeza que deseja limpar o carrinho com ${carrinho.length} itens?`)) {
         return;
     }
     
-    checkoutBtn.disabled = false;
-    clearBtn.disabled = false;
-    
-    let html = '';
-    
-    cartData.items.forEach((item, index) => {
-        const variation = parseFloat(item.variacao || 0);
-        const variationClass = variation < 0 ? 'text-success' : variation > 0 ? 'text-danger' : '';
-        const variationIcon = variation < 0 ? 'fa-arrow-down' : variation > 0 ? 'fa-arrow-up' : 'fa-minus';
-        
-        html += `
-            <tr>
-                <td>${index + 1}</td>
-                <td>${item.ean}</td>
-                <td>
-                    <strong>${item.nome}</strong><br>
-                    <small class="text-muted">${item.marca || ''}</small>
-                </td>
-                <td>R$ ${parseFloat(item.preco_antigo || 0).toFixed(2)}</td>
-                <td>R$ ${parseFloat(item.preco_atual || 0).toFixed(2)}</td>
-                <td class="${variationClass}">
-                    <i class="fas ${variationIcon}"></i>
-                    R$ ${Math.abs(variation).toFixed(2)}
-                </td>
-                <td>
-                    <button class="btn-icon" onclick="removeFromCart('${item.ean}')" title="Remover">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    tbody.innerHTML = html;
-}
-
-function displayEmptyCart() {
-    const tbody = document.getElementById('cartBody');
-    
-    tbody.innerHTML = `
-        <tr>
-            <td colspan="7" class="text-center">
-                <div style="padding: 40px;">
-                    <i class="fas fa-shopping-cart" style="font-size: 48px; color: #ddd; margin-bottom: 20px;"></i>
-                    <h3 style="color: #999; margin-bottom: 10px;">Carrinho vazio</h3>
-                    <p style="color: #aaa;">Adicione produtos escaneando ou buscando.</p>
-                </div>
-            </td>
-        </tr>
-    `;
-    
-    // Resetar resumo
-    document.getElementById('cartItemsCount').textContent = '0';
-    document.getElementById('cartTotalCurrent').textContent = 'R$ 0,00';
-    document.getElementById('cartTotalPrevious').textContent = 'R$ 0,00';
-    document.getElementById('cartVariation').textContent = 'R$ 0,00';
-}
-
-function updateCartSummary(cartData) {
-    document.getElementById('cartItemsCount').textContent = cartData.total || 0;
-    document.getElementById('cartTotalCurrent').textContent = `R$ ${parseFloat(cartData.subtotal || 0).toFixed(2)}`;
-    document.getElementById('cartTotalPrevious').textContent = `R$ ${parseFloat(cartData.preco_antigo_total || 0).toFixed(2)}`;
-    
-    const variation = parseFloat(cartData.variacao_total || 0);
-    const variationElement = document.getElementById('cartVariation');
-    
-    if (variation < 0) {
-        variationElement.innerHTML = `<span class="text-success">-R$ ${Math.abs(variation).toFixed(2)}</span>`;
-    } else if (variation > 0) {
-        variationElement.innerHTML = `<span class="text-danger">+R$ ${variation.toFixed(2)}</span>`;
-    } else {
-        variationElement.textContent = 'R$ 0,00';
-    }
-}
-
-async function removeFromCart(ean) {
-    showConfirm(
-        'Remover do carrinho',
-        'Tem certeza que deseja remover este item do carrinho?',
-        async () => {
-            try {
-                const url = `${GOOGLE_SHEETS_API}?operation=removeFromCart&ean=${ean}`;
-                const response = await fetch(url);
-                const result = await response.json();
-                
-                if (result.success) {
-                    showAlert('Item removido do carrinho!', 'success');
-                    loadCart();
-                    updateCartCount();
-                } else {
-                    showAlert('Erro ao remover item: ' + result.message, 'danger');
-                }
-            } catch (error) {
-                console.error('Erro ao remover do carrinho:', error);
-                showAlert('Erro ao remover item', 'danger');
-            }
-        }
-    );
-}
-
-async function clearCart() {
-    showConfirm(
-        'Limpar carrinho',
-        'Tem certeza que deseja limpar todo o carrinho? Esta ação não pode ser desfeita.',
-        async () => {
-            try {
-                const url = `${GOOGLE_SHEETS_API}?operation=clearCart`;
-                const response = await fetch(url);
-                const result = await response.json();
-                
-                if (result.success) {
-                    showAlert('Carrinho limpo com sucesso!', 'success');
-                    loadCart();
-                    updateCartCount();
-                } else {
-                    showAlert('Erro ao limpar carrinho: ' + result.message, 'danger');
-                }
-            } catch (error) {
-                console.error('Erro ao limpar carrinho:', error);
-                showAlert('Erro ao limpar carrinho', 'danger');
-            }
-        }
-    );
-}
-
-async function checkout() {
-    showConfirm(
-        'Finalizar compra',
-        'Finalizar compra e mover itens para o histórico? Os preços serão atualizados no banco.',
-        async () => {
-            try {
-                updateStatus('Finalizando compra...', 'info');
-                
-                const url = `${GOOGLE_SHEETS_API}?operation=checkout`;
-                const response = await fetch(url);
-                const result = await response.json();
-                
-                if (result.success) {
-                    showReceipt(result);
-                    loadCart();
-                    updateCartCount();
-                    loadProducts(); // Atualizar lista de produtos
-                    updateStatus('Compra finalizada com sucesso!', 'success');
-                } else {
-                    showAlert('Erro ao finalizar compra: ' + result.message, 'danger');
-                }
-            } catch (error) {
-                console.error('Erro no checkout:', error);
-                showAlert('Erro ao finalizar compra', 'danger');
-            }
-        }
-    );
-}
-
-// ========== PRODUTOS ==========
-async function loadProducts() {
     try {
-        const url = `${GOOGLE_SHEETS_API}?operation=list`;
+        const url = `${GOOGLE_SHEETS_API}?operation=clearCart`;
         const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
         const result = await response.json();
         
         if (result.success) {
-            displayProducts(result.produtos);
-            updateProductsInfo(result.produtos.length);
-        } else {
-            displayNoProducts();
+            updateStatus('✅ Carrinho esvaziado!', 'success');
+            carrinho = [];
+            atualizarInterfaceCarrinho();
         }
-        
     } catch (error) {
-        console.error('Erro ao carregar produtos:', error);
-        displayNoProducts();
+        console.error('Erro ao limpar carrinho:', error);
+        updateStatus('❌ Erro ao limpar carrinho', 'error');
     }
 }
 
-function displayProducts(products) {
-    const tbody = document.getElementById('productsBody');
-    
-    if (!products || products.length === 0) {
-        displayNoProducts();
+async function finalizarCompra() {
+    if (!carrinho.length) {
+        showAlert('O carrinho está vazio!', 'warning');
         return;
     }
     
-    let html = '';
+    const total = carrinho.reduce((sum, item) => sum + (parseFloat(item.preco_atual) || 0), 0);
     
-    products.forEach((product, index) => {
-        html += `
-            <tr>
-                <td>${product.ean}</td>
-                <td>
-                    <strong>${product.nome}</strong><br>
-                    <small class="text-muted">${product.fonte || ''}</small>
-                </td>
-                <td>${product.marca || ''}</td>
-                <td>R$ ${parseFloat(product.preco || 0).toFixed(2)}</td>
-                <td>${formatShortDate(product.ultima_consulta || product.cadastro)}</td>
-                <td>
-                    <button class="btn-icon" onclick="openPriceModal(${JSON.stringify(product).replace(/"/g, '&quot;')})" title="Comprar">
-                        <i class="fas fa-cart-plus"></i>
-                    </button>
-                    <button class="btn-icon" onclick="editProduct(${product.linha})" title="Editar">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
+    if (!confirm(`Finalizar compra com ${carrinho.length} itens por R$ ${total.toFixed(2)}?`)) {
+        return;
+    }
     
-    tbody.innerHTML = html;
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=checkout`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            updateStatus(`✅ Compra finalizada! ${result.resumo.total_itens} itens`, 'success');
+            showAlert(`Compra realizada com sucesso!\n\nTotal: R$ ${result.resumo.total_valor}\nEconomia: R$ ${result.resumo.economia || '0.00'}`, 'success');
+            carrinho = [];
+            atualizarInterfaceCarrinho();
+            carregarHistorico();
+            carregarEstatisticas();
+        } else {
+            throw new Error(result.message || 'Erro ao finalizar compra');
+        }
+    } catch (error) {
+        console.error('Erro ao finalizar compra:', error);
+        updateStatus('❌ Erro ao finalizar compra', 'error');
+    }
 }
 
-function displayNoProducts() {
-    const tbody = document.getElementById('productsBody');
-    
-    tbody.innerHTML = `
-        <tr>
-            <td colspan="6" class="text-center">
-                <div style="padding: 40px;">
-                    <i class="fas fa-box-open" style="font-size: 48px; color: #ddd; margin-bottom: 20px;"></i>
-                    <h3 style="color: #999; margin-bottom: 10px;">Nenhum produto</h3>
-                    <p style="color: #aaa;">Cadastre produtos escaneando códigos de barras.</p>
-                </div>
-            </td>
-        </tr>
-    `;
-}
-
-function filterProducts() {
-    const search = document.getElementById('searchProducts').value.toLowerCase();
-    const rows = document.querySelectorAll('#productsBody tr');
-    
-    rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(search) ? '' : 'none';
-    });
-}
-
-function updateProductsInfo(count) {
-    document.getElementById('productsInfo').textContent = `${count} produtos encontrados`;
-    document.getElementById('totalProducts').textContent = `${count} produtos`;
+async function removerDoCarrinho(ean) {
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=removeFromCart&ean=${ean}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            updateStatus('✅ Item removido do carrinho', 'success');
+            carregarCarrinho();
+        }
+    } catch (error) {
+        console.error('Erro ao remover do carrinho:', error);
+        updateStatus('❌ Erro ao remover item', 'error');
+    }
 }
 
 // ========== HISTÓRICO ==========
-async function loadHistory() {
+async function carregarHistorico() {
     try {
-        const url = `${GOOGLE_SHEETS_API}?operation=getHistorico`;
+        const filtro = document.getElementById('historicoFiltro')?.value || '7';
+        let url = `${GOOGLE_SHEETS_API}?operation=getHistorico`;
+        
+        if (filtro !== 'all') {
+            url += `&limit=${filtro}`;
+        }
+        
         const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
         const result = await response.json();
         
         if (result.success) {
-            displayHistoryDates(result.historico);
-            displayAllHistory(result.historico);
-            updateHistoryInfo(result.total_compras);
-        } else {
-            displayNoHistory();
+            historico = result.historico || [];
+            atualizarInterfaceHistorico();
+            return result;
         }
-        
+        return { success: false };
     } catch (error) {
         console.error('Erro ao carregar histórico:', error);
-        displayNoHistory();
+        return { success: false, error: error.message };
     }
 }
 
-function displayHistoryDates(history) {
-    const container = document.getElementById('historyDates');
+// ========== LISTA DE PRODUTOS ==========
+async function carregarTodosProdutos() {
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=list&limit=1000`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            todosProdutos = result.produtos || [];
+            paginaAtual = 1;
+            atualizarInterfaceListaProdutos();
+            return result;
+        }
+        return { success: false };
+    } catch (error) {
+        console.error('Erro ao carregar produtos:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+function filtrarProdutos() {
+    const busca = document.getElementById('buscaProdutos')?.value.toLowerCase() || '';
     
-    if (!history || history.length === 0) {
-        container.innerHTML = '<p class="text-muted">Nenhuma compra registrada</p>';
+    if (!busca) {
+        atualizarInterfaceListaProdutos();
         return;
     }
     
-    // Extrair datas únicas
-    const dates = [...new Set(history.map(item => item.data))];
+    const filtrados = todosProdutos.filter(produto => 
+        produto.nome.toLowerCase().includes(busca) ||
+        (produto.marca && produto.marca.toLowerCase().includes(busca)) ||
+        produto.ean.toString().includes(busca)
+    );
     
-    let html = '<button class="date-chip active" onclick="showAllHistory()">Todas</button>';
-    
-    dates.forEach(date => {
-        html += `<button class="date-chip" onclick="filterHistoryByDate('${date}')">${date}</button>`;
-    });
-    
-    container.innerHTML = html;
+    renderizarProdutos(filtrados);
 }
 
-function displayAllHistory(history) {
-    const tbody = document.getElementById('historyBody');
+function proximaPagina() {
+    const totalPaginas = Math.ceil(todosProdutos.length / itensPorPagina);
+    if (paginaAtual < totalPaginas) {
+        paginaAtual++;
+        atualizarInterfaceListaProdutos();
+    }
+}
+
+function paginaAnterior() {
+    if (paginaAtual > 1) {
+        paginaAtual--;
+        atualizarInterfaceListaProdutos();
+    }
+}
+
+// ========== ESTATÍSTICAS ==========
+async function carregarEstatisticas() {
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=stats`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            atualizarInterfaceEstatisticas(result.estatisticas);
+            return result;
+        }
+        return { success: false };
+    } catch (error) {
+        console.error('Erro ao carregar estatísticas:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// ========== RENDERIZAÇÃO DE RESULTADOS ==========
+function showProductInfo(product, isFromDatabase = true) {
+    const resultDiv = document.getElementById('result');
     
-    if (!history || history.length === 0) {
-        displayNoHistory();
+    let imageHtml = '';
+    if (product.imagem) {
+        imageHtml = `
+            <div class="product-image-container">
+                <img src="${product.imagem}" 
+                     class="product-image" 
+                     alt="${product.nome}"
+                     onerror="handleImageError(this)">
+            </div>
+        `;
+    } else {
+        imageHtml = `
+            <div class="product-image-container">
+                <div style="padding: 40px; text-align: center; color: #6b7280;">
+                    📷 Sem imagem
+                </div>
+            </div>
+        `;
+    }
+    
+    let sourceBadge = isFromDatabase ? 
+        '<span class="db-badge">BANCO LOCAL</span>' : 
+        '<span class="db-missing">EXTERNO</span>';
+    
+    let priceHtml = '';
+    if (product.preco) {
+        priceHtml = `
+            <div style="margin-top: 10px; color: #10b981; font-weight: bold; font-size: 16px;">
+                💰 R$ ${product.preco}
+            </div>
+        `;
+    }
+    
+    resultDiv.innerHTML = `
+        <div class="product-card">
+            ${imageHtml}
+            
+            <div class="product-details">
+                <div class="product-code">📦 EAN: ${product.ean}</div>
+                
+                <div class="product-title">${product.nome}</div>
+                
+                ${product.marca ? `
+                <div class="product-brand">🏭 ${product.marca}</div>
+                ` : ''}
+                
+                ${priceHtml}
+                
+                ${product.cadastro ? `
+                <div style="margin-top: 5px; font-size: 12px; color: #6b7280;">
+                    📅 Cadastro: ${product.cadastro}
+                </div>
+                ` : ''}
+                
+                <div class="source-badge">${sourceBadge}</div>
+            </div>
+        </div>
+        
+        <div class="api-actions">
+            ${isFromDatabase ? `
+            <button class="btn btn-warning" onclick="openEditModal('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', '${product.linha || ''}')">
+                ✏️ Editar
+            </button>
+            <button class="btn btn-danger" onclick="deleteProduct('${product.ean}', '${product.linha || ''}')">
+                🗑️ Excluir
+            </button>
+            ` : `
+            <button class="btn btn-success" onclick="saveExternalProductToDatabase('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', 'Banco Local')">
+                💾 Salvar no Banco
+            </button>
+            `}
+            <button class="btn" onclick="searchOnline('${product.ean}', '${encodeURIComponent(product.nome)}')">
+                🌐 Pesquisar Online
+            </button>
+        </div>
+        
+        <div class="product-actions-compras">
+            <button class="btn btn-carrinho" onclick="openCarrinhoModal('${product.ean}', '${encodeURIComponent(product.nome)}', '${product.preco || ''}')">
+                🛒 Adicionar ao Carrinho
+            </button>
+            <button class="btn btn-success" onclick="switchTab('compras')">
+                📋 Ver Carrinho
+            </button>
+        </div>
+    `;
+    
+    resultDiv.classList.add('active');
+}
+
+function showExternalProductInfo(product, code, source) {
+    const resultDiv = document.getElementById('result');
+    
+    let imageHtml = '';
+    if (product.image) {
+        imageHtml = `
+            <div class="product-image-container">
+                <img src="${product.image}" 
+                     class="product-image" 
+                     alt="${product.name}"
+                     onerror="handleImageError(this)">
+            </div>
+        `;
+    } else {
+        imageHtml = `
+            <div class="product-image-container">
+                <div style="padding: 40px; text-align: center; color: #6b7280;">
+                    📷 Sem imagem
+                </div>
+            </div>
+        `;
+    }
+    
+    let priceHtml = '';
+    if (product.price) {
+        priceHtml = `
+            <div style="margin-top: 10px; color: #10b981; font-weight: bold; font-size: 16px;">
+                💰 ${product.price}
+            </div>
+        `;
+    }
+    
+    resultDiv.innerHTML = `
+        <div class="product-card">
+            ${imageHtml}
+            
+            <div class="product-details">
+                <div class="product-code">📦 EAN: ${code}</div>
+                
+                <div class="product-title">${product.name}</div>
+                
+                ${product.brand ? `
+                <div class="product-brand">🏭 ${product.brand}</div>
+                ` : ''}
+                
+                ${priceHtml}
+                
+                <div class="source-badge">Fonte: ${source} <span class="db-missing">EXTERNO</span></div>
+            </div>
+        </div>
+        
+        <div class="api-actions">
+            <button class="btn btn-success" onclick="saveExternalProductToDatabase('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
+                💾 Salvar no Banco
+            </button>
+            <button class="btn btn-warning" onclick="editExternalProduct('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
+                ✏️ Editar antes de Salvar
+            </button>
+            <button class="btn" onclick="searchOnline('${code}', '${encodeURIComponent(product.name)}')">
+                🌐 Pesquisar Online
+            </button>
+        </div>
+        
+        <div class="product-actions-compras">
+            <button class="btn btn-carrinho" onclick="openCarrinhoModal('${code}', '${encodeURIComponent(product.name)}', '${product.price || ''}')">
+                🛒 Adicionar ao Carrinho
+            </button>
+            <button class="btn btn-success" onclick="switchTab('compras')">
+                📋 Ver Carrinho
+            </button>
+        </div>
+    `;
+    
+    resultDiv.classList.add('active');
+}
+
+function showAddToDatabaseForm(code) {
+    const resultDiv = document.getElementById('result');
+    
+    resultDiv.innerHTML = `
+        <div class="no-results">
+            <div class="no-results-icon">➕</div>
+            <h3 style="color: #6b7280; margin-bottom: 10px;">Produto não encontrado</h3>
+            <p style="color: #9ca3af; font-size: 14px; margin-bottom: 20px;">
+                Código: <strong>${code}</strong><br>
+                O produto não foi encontrado em nenhuma fonte.
+            </p>
+            
+            <div style="margin-top: 20px;">
+                <button class="btn btn-success" onclick="openManualAddModal('${code}')">
+                    ✏️ Cadastrar Manualmente
+                </button>
+                <button class="btn" onclick="searchOnline('${code}')" style="margin-top: 10px;">
+                    🌐 Pesquisar na Web
+                </button>
+            </div>
+        </div>
+    `;
+    
+    resultDiv.classList.add('active');
+}
+
+function showErrorResult(title, message) {
+    const resultDiv = document.getElementById('result');
+    
+    resultDiv.innerHTML = `
+        <div class="no-results">
+            <div class="no-results-icon">⚠️</div>
+            <h3 style="color: #6b7280; margin-bottom: 10px;">${title}</h3>
+            <p style="color: #9ca3af; font-size: 14px;">${message}</p>
+            <button class="btn" onclick="searchManual()" style="margin-top: 20px;">
+                🔄 Tentar novamente
+            </button>
+        </div>
+    `;
+    
+    resultDiv.classList.add('active');
+}
+
+function clearResult() {
+    const resultDiv = document.getElementById('result');
+    resultDiv.innerHTML = '';
+    resultDiv.classList.remove('active');
+}
+
+// ========== INTERFACES DAS ABAS ==========
+function atualizarInterfaceCarrinho() {
+    const carrinhoItens = document.getElementById('carrinhoItens');
+    const carrinhoCount = document.getElementById('carrinhoCount');
+    const carrinhoTotal = document.getElementById('carrinhoTotal');
+    
+    if (!carrinhoItens) return;
+    
+    if (carrinho.length === 0) {
+        carrinhoItens.innerHTML = `
+            <div class="no-results">
+                <div class="no-results-icon">🛒</div>
+                <h3>Carrinho vazio</h3>
+                <p>Adicione produtos ao carrinho para começar</p>
+            </div>
+        `;
+        if (carrinhoCount) carrinhoCount.textContent = '0 itens';
+        if (carrinhoTotal) carrinhoTotal.textContent = 'R$ 0,00';
+        return;
+    }
+    
+    let html = '';
+    let total = 0;
+    let precoAntigoTotal = 0;
+    
+    carrinho.forEach(item => {
+        const precoAtual = parseFloat(item.preco_atual) || 0;
+        const precoAntigo = parseFloat(item.preco_antigo) || 0;
+        const variacao = item.variacao || precoAtual - precoAntigo;
+        
+        total += precoAtual;
+        precoAntigoTotal += precoAntigo;
+        
+        html += `
+            <div class="carrinho-item">
+                <div class="carrinho-item-info">
+                    <strong>${item.nome}</strong><br>
+                    <small>${item.ean}</small>
+                </div>
+                <div class="carrinho-item-precos">
+                    ${precoAntigo > 0 ? `<div class="preco-antigo">R$ ${precoAntigo.toFixed(2)}</div>` : ''}
+                    <div class="preco-atual">R$ ${precoAtual.toFixed(2)}</div>
+                    ${variacao != 0 ? `
+                    <div class="variacao ${variacao < 0 ? 'negativa' : 'positiva'}">
+                        ${variacao < 0 ? '▼' : '▲'} R$ ${Math.abs(variacao).toFixed(2)}
+                    </div>
+                    ` : ''}
+                    <button class="btn btn-small btn-danger" onclick="removerDoCarrinho('${item.ean}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    carrinhoItens.innerHTML = html;
+    
+    if (carrinhoCount) {
+        carrinhoCount.textContent = `${carrinho.length} ${carrinho.length === 1 ? 'item' : 'itens'}`;
+    }
+    
+    if (carrinhoTotal) {
+        carrinhoTotal.textContent = `R$ ${total.toFixed(2)}`;
+    }
+    
+    // Adicionar resumo de economia
+    const economia = precoAntigoTotal - total;
+    if (economia > 0) {
+        const resumo = document.createElement('div');
+        resumo.className = 'carrinho-resumo';
+        resumo.innerHTML = `
+            <div style="background: #d1fae5; padding: 10px; border-radius: var(--radius-sm); margin-top: 10px; text-align: center;">
+                💰 <strong>Economia total:</strong> R$ ${economia.toFixed(2)}
+            </div>
+        `;
+        carrinhoItens.appendChild(resumo);
+    }
+}
+
+function atualizarInterfaceHistorico() {
+    const historicoLista = document.getElementById('historicoLista');
+    if (!historicoLista) return;
+    
+    if (historico.length === 0) {
+        historicoLista.innerHTML = `
+            <div class="no-results">
+                <div class="no-results-icon">📊</div>
+                <h3>Nenhum histórico de compras</h3>
+                <p>Finalize uma compra para começar o histórico</p>
+            </div>
+        `;
         return;
     }
     
     let html = '';
     
-    // Ordenar por data (mais recente primeiro)
-    history.sort((a, b) => new Date(b.data_completa) - new Date(a.data_completa));
-    
-    history.forEach(item => {
-        item.itens.forEach(product => {
-            const variation = parseFloat(product.variacao || 0);
-            const variationClass = variation < 0 ? 'text-success' : variation > 0 ? 'text-danger' : '';
-            
+    historico.forEach(compra => {
+        html += `
+            <div class="historico-item">
+                <div class="historico-data">
+                    <span>${compra.data}</span>
+                    <span class="historico-total">
+                        ${compra.total_itens} itens • R$ ${parseFloat(compra.total_valor).toFixed(2)}
+                    </span>
+                </div>
+                <div class="historico-produtos">
+        `;
+        
+        compra.itens.slice(0, 3).forEach(item => {
             html += `
-                <tr>
-                    <td>${product.data_compra}</td>
-                    <td>${product.ean}</td>
-                    <td>
-                        <strong>${product.nome}</strong><br>
-                        <small class="text-muted">${product.marca || ''}</small>
-                    </td>
-                    <td>R$ ${parseFloat(product.preco_antigo || 0).toFixed(2)}</td>
-                    <td>R$ ${parseFloat(product.preco_atual || 0).toFixed(2)}</td>
-                    <td class="${variationClass}">
-                        R$ ${Math.abs(variation).toFixed(2)}
-                    </td>
-                </tr>
+                <div class="historico-produto">
+                    <span>${item.nome}</span>
+                    <span>R$ ${parseFloat(item.preco_atual).toFixed(2)}</span>
+                </div>
             `;
         });
+        
+        if (compra.itens.length > 3) {
+            html += `<div style="text-align: center; padding: 10px; color: var(--gray);">+ ${compra.itens.length - 3} itens</div>`;
+        }
+        
+        html += `
+                </div>
+            </div>
+        `;
     });
     
-    tbody.innerHTML = html;
+    historicoLista.innerHTML = html;
 }
 
-function filterHistoryByDate(date) {
-    // Implementar filtro por data
-    showAlert('Filtro por data em desenvolvimento', 'info');
-}
-
-function showAllHistory() {
-    // Recarregar histórico completo
-    loadHistory();
-}
-
-function displayNoHistory() {
-    const tbody = document.getElementById('historyBody');
+function atualizarInterfaceListaProdutos() {
+    const listaProdutos = document.getElementById('listaProdutos');
+    const paginaAtualSpan = document.getElementById('paginaAtual');
+    const btnAnterior = document.getElementById('btnAnterior');
+    const btnProximo = document.getElementById('btnProximo');
     
-    tbody.innerHTML = `
-        <tr>
-            <td colspan="6" class="text-center">
-                <div style="padding: 40px;">
-                    <i class="fas fa-history" style="font-size: 48px; color: #ddd; margin-bottom: 20px;"></i>
-                    <h3 style="color: #999; margin-bottom: 10px;">Nenhum histórico</h3>
-                    <p style="color: #aaa;">Nenhuma compra registrada no histórico.</p>
+    if (!listaProdutos) return;
+    
+    if (todosProdutos.length === 0) {
+        listaProdutos.innerHTML = `
+            <div class="no-results">
+                <div class="no-results-icon">📦</div>
+                <h3>Nenhum produto cadastrado</h3>
+                <p>Comece escaneando ou cadastrando produtos</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const inicio = (paginaAtual - 1) * itensPorPagina;
+    const fim = inicio + itensPorPagina;
+    const produtosPagina = todosProdutos.slice(inicio, fim);
+    
+    renderizarProdutos(produtosPagina);
+    
+    if (paginaAtualSpan) {
+        paginaAtualSpan.textContent = `Página ${paginaAtual} de ${Math.ceil(todosProdutos.length / itensPorPagina)}`;
+    }
+    
+    if (btnAnterior) {
+        btnAnterior.disabled = paginaAtual === 1;
+    }
+    
+    if (btnProximo) {
+        btnProximo.disabled = paginaAtual === Math.ceil(todosProdutos.length / itensPorPagina);
+    }
+}
+
+function renderizarProdutos(produtos) {
+    const listaProdutos = document.getElementById('listaProdutos');
+    if (!listaProdutos) return;
+    
+    let html = '';
+    
+    produtos.forEach(produto => {
+        html += `
+            <div class="produto-card-mini" onclick="searchProduct('${produto.ean}')">
+                <h4>${produto.nome}</h4>
+                <div><small>${produto.ean}</small></div>
+                ${produto.marca ? `<div><small>${produto.marca}</small></div>` : ''}
+                <div class="preco">R$ ${produto.preco || '0.00'}</div>
+                <div class="produto-actions">
+                    <button class="btn btn-small" onclick="event.stopPropagation(); openCarrinhoModal('${produto.ean}', '${encodeURIComponent(produto.nome)}', '${produto.preco || ''}')">
+                        <i class="fas fa-cart-plus"></i>
+                    </button>
+                    <button class="btn btn-small btn-warning" onclick="event.stopPropagation(); openEditModal('${produto.ean}', '${encodeURIComponent(produto.nome)}', '${encodeURIComponent(produto.marca || '')}', '${encodeURIComponent(produto.imagem || '')}', '${encodeURIComponent(produto.preco || '')}', '${produto.linha || ''}')">
+                        <i class="fas fa-edit"></i>
+                    </button>
                 </div>
-            </td>
-        </tr>
-    `;
+            </div>
+        `;
+    });
+    
+    listaProdutos.innerHTML = html;
 }
 
-function updateHistoryInfo(count) {
-    document.getElementById('totalHistory').textContent = `${count} compras`;
-}
-
-// ========== RECIBO ==========
-function showReceipt(checkoutData) {
-    const date = new Date().toLocaleString('pt-BR');
+function atualizarInterfaceEstatisticas(estatisticas) {
+    const estatisticasConteudo = document.getElementById('estatisticasConteudo');
+    if (!estatisticasConteudo) return;
     
-    document.getElementById('receiptDate').textContent = date;
-    document.getElementById('receiptTotalItems').textContent = checkoutData.resumo.total_itens || 0;
-    document.getElementById('receiptTotalValue').textContent = `R$ ${parseFloat(checkoutData.resumo.total_valor || 0).toFixed(2)}`;
-    document.getElementById('receiptTotalSavings').textContent = `R$ ${parseFloat(checkoutData.resumo.economia || 0).toFixed(2)}`;
-    
-    // Itens do recibo (simplificado)
-    document.getElementById('receiptItems').innerHTML = `
-        <div class="receipt-item">
-            <span class="receipt-item-name">Compra finalizada</span>
-            <span class="receipt-item-price">${checkoutData.resumo.total_itens} itens</span>
+    const html = `
+        <div class="stats-content">
+            <div class="stat-card">
+                <div class="label">Total de Produtos</div>
+                <div class="value">${estatisticas.total_produtos || 0}</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="label">Itens no Carrinho</div>
+                <div class="value">${estatisticas.carrinho || 0}</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="label">Histórico de Compras</div>
+                <div class="value">${estatisticas.historico_compras || 0}</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="label">Valor em Estoque</div>
+                <div class="value">R$ ${estatisticas.valor_estoque || '0.00'}</div>
+            </div>
+            
+            ${estatisticas.compras_ultimos_6_meses ? `
+            <div class="stat-card" style="grid-column: span 2;">
+                <div class="label">Compras nos Últimos 6 Meses</div>
+                <div style="margin-top: 10px;">
+                    ${Object.entries(estatisticas.compras_ultimos_6_meses).map(([mes, qtd]) => `
+                        <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+                            <span>${mes}</span>
+                            <span style="font-weight: bold;">${qtd}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
         </div>
     `;
     
-    // Mostrar modal
-    document.getElementById('receiptModal').classList.add('active');
+    estatisticasConteudo.innerHTML = html;
 }
 
-function closeReceiptModal() {
-    document.getElementById('receiptModal').classList.remove('active');
+// ========== FUNÇÕES DE TAB ==========
+function switchTab(tab) {
+    // Esconder todas as seções
+    document.querySelectorAll('.tab-content').forEach(section => {
+        section.classList.remove('active');
+        section.classList.add('hidden');
+    });
+    
+    // Atualizar tabs
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => {
+        if (t.textContent.toLowerCase().includes(tab)) {
+            t.classList.add('active');
+        }
+    });
+    
+    // Mostrar seção correspondente
+    const sectionId = `${tab}Section`;
+    const section = document.getElementById(sectionId);
+    
+    if (section) {
+        section.classList.remove('hidden');
+        section.classList.add('active');
+    }
+    
+    // Carregar dados específicos da tab
+    switch(tab) {
+        case 'compras':
+            carregarCarrinho();
+            break;
+        case 'historico':
+            carregarHistorico();
+            break;
+        case 'produtos':
+            if (todosProdutos.length === 0) carregarTodosProdutos();
+            break;
+        case 'estatisticas':
+            carregarEstatisticas();
+            break;
+    }
+}
+
+// ========== MODAL FUNCTIONS ==========
+function openEditModal(ean, nome, marca, imagem, preco, linha) {
+    currentProduct = { ean, linha };
+    
+    document.getElementById('editNome').value = decodeURIComponent(nome);
+    document.getElementById('editMarca').value = decodeURIComponent(marca);
+    document.getElementById('editImagem').value = decodeURIComponent(imagem);
+    document.getElementById('editPreco').value = decodeURIComponent(preco);
+    
+    document.getElementById('editModal').classList.add('active');
+}
+
+function openManualAddModal(code) {
+    currentProduct = { ean: code };
+    
+    document.getElementById('editNome').value = '';
+    document.getElementById('editMarca').value = '';
+    document.getElementById('editImagem').value = '';
+    document.getElementById('editPreco').value = '';
+    
+    document.getElementById('editModal').classList.add('active');
+}
+
+function closeModal() {
+    document.getElementById('editModal').classList.remove('active');
+    document.getElementById('carrinhoModal').classList.remove('active');
+    currentProduct = null;
+}
+
+async function saveEditedProduct() {
+    const nome = document.getElementById('editNome').value.trim();
+    const marca = document.getElementById('editMarca').value.trim();
+    const imagem = document.getElementById('editImagem').value.trim();
+    const preco = document.getElementById('editPreco').value.trim();
+    
+    if (!nome) {
+        showAlert('Por favor, informe o nome do produto', 'warning');
+        return;
+    }
+    
+    if (!currentProduct) return;
+    
+    const productData = {
+        ean: currentProduct.ean,
+        nome: nome,
+        marca: marca,
+        imagem: imagem,
+        preco: preco,
+        fonte: currentProduct.linha ? 'Editado' : 'Manual'
+    };
+    
+    if (currentProduct.linha) {
+        productData.linha = currentProduct.linha;
+    }
+    
+    updateStatus('Salvando produto...', 'scanning');
+    
+    const result = currentProduct.linha ? 
+        await updateInGoogleSheets(productData) : 
+        await saveToGoogleSheets(productData);
+    
+    if (result.success) {
+        updateStatus('✅ Produto salvo no banco local!', 'success');
+        closeModal();
+        setTimeout(() => searchProduct(currentProduct.ean), 1000);
+        carregarTodosProdutos();
+    } else {
+        updateStatus(`❌ Erro ao salvar: ${result.error || result.message}`, 'error');
+    }
+}
+
+function editExternalProduct(code, name, brand, image, price, source) {
+    currentProduct = { ean: code, source };
+    
+    document.getElementById('editNome').value = decodeURIComponent(name);
+    document.getElementById('editMarca').value = decodeURIComponent(brand);
+    document.getElementById('editImagem').value = decodeURIComponent(image);
+    document.getElementById('editPreco').value = decodeURIComponent(price);
+    
+    document.getElementById('editModal').classList.add('active');
+}
+
+async function saveExternalProductToDatabase(code, name, brand, image, price, source) {
+    const productData = {
+        ean: code,
+        nome: decodeURIComponent(name),
+        marca: decodeURIComponent(brand),
+        imagem: decodeURIComponent(image),
+        preco: decodeURIComponent(price),
+        fonte: source
+    };
+    
+    updateStatus('Salvando no banco local...', 'scanning');
+    
+    const result = await saveToGoogleSheets(productData);
+    
+    if (result.success) {
+        updateStatus('✅ Produto salvo no banco local!', 'success');
+        setTimeout(() => searchProduct(code), 1000);
+        carregarTodosProdutos();
+    } else {
+        updateStatus(`❌ Erro ao salvar: ${result.error || result.message}`, 'error');
+    }
+}
+
+// ========== MODAL DO CARRINHO ==========
+function openCarrinhoModal(ean, nome, preco) {
+    document.getElementById('carrinhoProdutoInfo').innerHTML = `
+        <div style="padding: 10px; background: var(--light); border-radius: var(--radius-sm); margin-bottom: 15px;">
+            <strong>${decodeURIComponent(nome)}</strong><br>
+            <small>EAN: ${ean}</small>
+        </div>
+    `;
+    
+    document.getElementById('carrinhoPrecoAtual').value = preco || '';
+    document.getElementById('carrinhoPrecoAntigo').value = '';
+    
+    currentProduct = { ean: ean, nome: decodeURIComponent(nome) };
+    document.getElementById('carrinhoModal').classList.add('active');
+}
+
+function fecharCarrinhoModal() {
+    document.getElementById('carrinhoModal').classList.remove('active');
+    currentProduct = null;
+}
+
+async function confirmarAdicionarCarrinho() {
+    const precoAtual = document.getElementById('carrinhoPrecoAtual').value;
+    const precoAntigo = document.getElementById('carrinhoPrecoAntigo').value;
+    
+    if (!precoAtual || parseFloat(precoAtual) <= 0) {
+        showAlert('Informe um preço atual válido', 'warning');
+        return;
+    }
+    
+    if (!currentProduct) return;
+    
+    const produtoData = {
+        ean: currentProduct.ean,
+        nome: currentProduct.nome,
+        preco_atual: precoAtual,
+        preco_antigo: precoAntigo || precoAtual
+    };
+    
+    const result = await adicionarAoCarrinho(produtoData, precoAtual, precoAntigo || precoAtual);
+    
+    if (result && result.success) {
+        fecharCarrinhoModal();
+        switchTab('compras');
+    }
+}
+
+// ========== FUNÇÕES DE CRUD ==========
+async function deleteProduct(ean, linha) {
+    if (!confirm(`Tem certeza que deseja excluir o produto ${ean}?`)) {
+        return;
+    }
+    
+    updateStatus('Excluindo produto...', 'scanning');
+    
+    const result = await deleteFromGoogleSheets(ean, linha);
+    
+    if (result.success) {
+        updateStatus('✅ Produto excluído do banco local!', 'success');
+        
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = `
+            <div class="no-results">
+                <div class="no-results-icon">🗑️</div>
+                <h3 style="color: #6b7280; margin-bottom: 10px;">Produto excluído</h3>
+                <p style="color: #9ca3af; font-size: 14px;">
+                    Código: <strong>${ean}</strong>
+                </p>
+            </div>
+        `;
+        
+        carregarTodosProdutos();
+    } else {
+        updateStatus(`❌ Erro ao excluir: ${result.error || result.message}`, 'error');
+    }
 }
 
 // ========== FUNÇÕES AUXILIARES ==========
-function isValidEAN(code) {
-    if (!/^\d+$/.test(code)) return false;
-    if (code.length < 8 || code.length > 13) return false;
-    return true;
-}
-
-function updateStatus(message, type = 'info') {
+function updateStatus(message, type = 'default') {
     const statusDiv = document.getElementById('status');
     
     let icon = '';
     switch(type) {
-        case 'success': icon = '<i class="fas fa-check-circle"></i>'; break;
-        case 'danger': icon = '<i class="fas fa-exclamation-circle"></i>'; break;
-        case 'warning': icon = '<i class="fas fa-exclamation-triangle"></i>'; break;
-        default: icon = '<i class="fas fa-info-circle"></i>';
+        case 'success': icon = '✅'; break;
+        case 'error': icon = '❌'; break;
+        case 'warning': icon = '⚠️'; break;
+        case 'scanning': icon = '<div class="loading"></div>'; break;
+        default: icon = 'ℹ️';
     }
     
     statusDiv.innerHTML = `${icon} ${message}`;
     statusDiv.className = `status ${type}`;
 }
 
+function isValidBarcode(code) {
+    if (!/^\d+$/.test(code)) return false;
+    if (code.length < 8 || code.length > 13) return false;
+    if (code.length === 13) return validateEAN13(code);
+    return true;
+}
+
+function validateEAN13(code) {
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+        const digit = parseInt(code[i]);
+        sum += digit * (i % 2 === 0 ? 1 : 3);
+    }
+    const checksum = (10 - (sum % 10)) % 10;
+    return checksum === parseInt(code[12]);
+}
+
+function handleImageError(img) {
+    img.onerror = null;
+    img.parentElement.innerHTML = `
+        <div style="padding: 40px; text-align: center; color: #6b7280;">
+            📷 Imagem não carregada
+        </div>
+    `;
+}
+
+function searchOnline(code, name = '') {
+    const query = name ? `${decodeURIComponent(name)} ${code}` : `EAN ${code}`;
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=shop`, '_blank');
+}
+
 function showAlert(message, type = 'info') {
-    // Implementação simples - pode ser substituída por um toast
     alert(`[${type.toUpperCase()}] ${message}`);
 }
 
-function showConfirm(title, message, onConfirm) {
-    document.getElementById('confirmTitle').textContent = title;
-    document.getElementById('confirmMessage').textContent = message;
-    
-    const btn = document.getElementById('confirmActionBtn');
-    const modal = document.getElementById('confirmModal');
-    
-    // Configurar ação
-    btn.onclick = function() {
-        onConfirm();
-        modal.classList.remove('active');
-    };
-    
-    modal.classList.add('active');
-}
-
-function closeConfirmModal() {
-    document.getElementById('confirmModal').classList.remove('active');
-}
-
-async function updateCartCount() {
-    try {
-        const url = `${GOOGLE_SHEETS_API}?operation=getCart`;
-        const response = await fetch(url);
-        const result = await response.json();
-        
-        const count = result.success ? (result.total || 0) : 0;
-        document.getElementById('cartCount').textContent = count;
-        
-    } catch (error) {
-        console.error('Erro ao atualizar contador:', error);
-        document.getElementById('cartCount').textContent = '0';
+function checkAPIStatus() {
+    if (!GOOGLE_SHEETS_API) {
+        console.warn("URL do Google Sheets não configurada");
+        updateStatus('⚠️ Configure a URL do Google Sheets API!', 'warning');
     }
 }
 
-function formatShortDate(dateString) {
-    if (!dateString) return '';
-    
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('pt-BR');
-    } catch (e) {
-        return dateString;
-    }
-}
-
-async function checkAPIStatus() {
-    const element = document.getElementById('apiStatus');
-    
-    try {
-        const url = `${GOOGLE_SHEETS_API}?operation=test`;
-        const response = await fetch(url);
-        const result = await response.json();
-        
-        if (result.success) {
-            element.textContent = 'Conectado';
-            element.style.color = 'var(--success)';
-        } else {
-            element.textContent = 'Erro na API';
-            element.style.color = 'var(--danger)';
-        }
-    } catch (error) {
-        element.textContent = 'Sem conexão';
-        element.style.color = 'var(--danger)';
-    }
-}
-
-async function testConnection() {
-    try {
-        const url = `${GOOGLE_SHEETS_API}?operation=test`;
-        await fetch(url, { timeout: 5000 });
-        console.log('API conectada com sucesso');
-    } catch (error) {
-        console.error('Erro de conexão com API:', error);
-        showAlert('Erro de conexão com o servidor. Verifique sua internet.', 'danger');
-    }
-}
-
-async function loadStats() {
-    try {
-        const url = `${GOOGLE_SHEETS_API}?operation=stats`;
-        const response = await fetch(url);
-        const result = await response.json();
-        
-        if (result.success) {
-            const stats = result.estatisticas;
-            document.getElementById('totalProducts').textContent = `${stats.total_produtos || 0} produtos`;
-        }
-    } catch (error) {
-        console.error('Erro ao carregar estatísticas:', error);
-    }
-}
-
-function editProduct(linha) {
-    showAlert('Edição de produto em desenvolvimento', 'info');
-}
-
-function addProductManually(ean) {
-    showAlert('Cadastro manual em desenvolvimento', 'info');
-}
-
-// ========== EXPORTAR FUNÇÕES PARA ESCOPO GLOBAL ==========
-window.switchTab = switchTab;
+// ========== EXPORT FUNCTIONS TO GLOBAL SCOPE ==========
+window.searchManual = searchManual;
 window.initScanner = initScanner;
 window.stopScanner = stopScanner;
-window.searchProduct = searchProduct;
-window.openPriceModal = openPriceModal;
-window.closePriceModal = closePriceModal;
-window.calculateVariationModal = calculateVariationModal;
-window.addToCartFromModal = addToCartFromModal;
-window.removeFromCart = removeFromCart;
-window.clearCart = clearCart;
-window.checkout = checkout;
-window.filterProducts = filterProducts;
-window.filterHistoryByDate = filterHistoryByDate;
-window.showAllHistory = showAllHistory;
-window.closeReceiptModal = closeReceiptModal;
-window.closeConfirmModal = closeConfirmModal;
-window.editProduct = editProduct;
-window.addProductManually = addProductManually;
+window.searchOnline = searchOnline;
+window.openEditModal = openEditModal;
+window.openManualAddModal = openManualAddModal;
+window.closeModal = closeModal;
+window.saveEditedProduct = saveEditedProduct;
+window.deleteProduct = deleteProduct;
+window.saveExternalProductToDatabase = saveExternalProductToDatabase;
+window.editExternalProduct = editExternalProduct;
+window.handleImageError = handleImageError;
+window.switchTab = switchTab;
+window.carregarCarrinho = carregarCarrinho;
+window.limparCarrinho = limparCarrinho;
+window.finalizarCompra = finalizarCompra;
+window.carregarHistorico = carregarHistorico;
+window.carregarTodosProdutos = carregarTodosProdutos;
+window.filtrarProdutos = filtrarProdutos;
+window.proximaPagina = proximaPagina;
+window.paginaAnterior = paginaAnterior;
+window.openCarrinhoModal = openCarrinhoModal;
+window.fecharCarrinhoModal = fecharCarrinhoModal;
+window.confirmarAdicionarCarrinho = confirmarAdicionarCarrinho;
+window.removerDoCarrinho = removerDoCarrinho;
+window.carregarEstatisticas = carregarEstatisticas;
