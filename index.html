@@ -37,7 +37,7 @@
                     <i class="fas fa-stop"></i> Parar Scanner
                 </button>
                 
-                <!-- BOTÃO NOVO: Fechar Scanner -->
+                <!-- Botão Fechar Scanner -->
                 <button class="btn btn-secondary hidden" id="closeScannerBtn" onclick="closeScanner()">
                     <i class="fas fa-times"></i> Fechar Scanner
                 </button>
@@ -173,55 +173,24 @@
         </div>
     </div>
 
-    <!-- Modal para edição de preço com variação -->
-    <div class="modal hidden" id="editModal">
+    <!-- Modal Único para todas as operações -->
+    <div class="modal hidden" id="mainModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3><i class="fas fa-edit"></i> Editar Produto</h3>
-                <button class="btn-close" onclick="closeModal()">
+                <h3 id="modalTitle"><i class="fas fa-edit"></i> Editar Produto</h3>
+                <button class="btn-close" onclick="closeMainModal()">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="modal-body" id="editModalBody">
+            <div class="modal-body" id="modalBody">
                 <!-- Conteúdo dinâmico será injetado aqui -->
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal()">
+                <button class="btn btn-secondary" onclick="closeMainModal()">
                     <i class="fas fa-times"></i> Cancelar
                 </button>
-                <button class="btn btn-success" id="saveEditBtn" onclick="saveEditedProduct()">
-                    <i class="fas fa-save"></i> Salvar Alterações
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal para carrinho (SIMPLIFICADO - agora usa o modal de edição) -->
-    <div class="modal hidden" id="carrinhoModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fas fa-cart-plus"></i> Adicionar ao Carrinho</h3>
-                <button class="btn-close" onclick="fecharCarrinhoModal()">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div id="carrinhoProdutoInfo"></div>
-                <div class="form-group">
-                    <label><i class="fas fa-money-bill-wave"></i> Preço Atual (R$)</label>
-                    <input type="number" id="carrinhoPrecoAtual" step="0.01" min="0" placeholder="Ex: 6.90" required>
-                </div>
-                <div class="form-group">
-                    <label><i class="fas fa-history"></i> Preço Antigo (R$)</label>
-                    <input type="number" id="carrinhoPrecoAntigo" step="0.01" min="0" placeholder="Ex: 7.50 (opcional)">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="fecharCarrinhoModal()">
-                    Cancelar
-                </button>
-                <button class="btn btn-success" onclick="confirmarAdicionarCarrinho()">
-                    Adicionar ao Carrinho
+                <button class="btn btn-success" id="modalActionBtn">
+                    <i class="fas fa-save"></i> Salvar
                 </button>
             </div>
         </div>
