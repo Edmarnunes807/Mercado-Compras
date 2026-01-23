@@ -108,11 +108,6 @@ body {
     display: block;
 }
 
-@keyframes slideIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
 /* ===== INPUT GROUPS ===== */
 .input-group { 
     margin-bottom: 25px; 
@@ -203,11 +198,6 @@ body {
 
 .btn-info {
     background: var(--info);
-    color: var(--white);
-}
-
-.btn-export {
-    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
     color: var(--white);
 }
 
@@ -377,21 +367,6 @@ body {
     font-weight: 600;
 }
 
-/* ===== BADGE DO CARRINHO ===== */
-.cart-badge {
-    background: var(--danger);
-    color: white;
-    border-radius: 50%;
-    padding: 2px 6px;
-    font-size: 10px;
-    margin-left: 5px;
-    vertical-align: top;
-}
-
-.cart-badge.hidden {
-    display: none;
-}
-
 /* ===== RESULTS ===== */
 .result {
     background: var(--gray-light);
@@ -399,6 +374,11 @@ body {
     padding: 20px;
     margin-top: 10px;
     animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* ===== PRODUCT CARD ===== */
@@ -591,13 +571,6 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    flex-wrap: wrap;
-}
-
-.carrinho-header small {
-    font-size: 12px;
-    opacity: 0.8;
-    margin-left: 5px;
 }
 
 .carrinho-stats {
@@ -885,7 +858,145 @@ body {
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
-/* ===== LOADING ===== */
+/* ===== EDIT LIST MODAL STYLES ===== */
+.edit-list-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.edit-list-item {
+    display: flex;
+    align-items: center;
+    min-height: 45px;
+    border-bottom: 1px solid var(--border);
+    padding: 10px 0;
+}
+
+.edit-list-item:last-child {
+    border-bottom: none;
+}
+
+.edit-list-label {
+    width: 150px;
+    font-weight: 600;
+    color: #374151;
+    font-size: 14px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.edit-list-label::before {
+    content: "→";
+    color: var(--primary);
+    font-weight: bold;
+}
+
+.edit-list-input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.3s;
+    background: white;
+    min-width: 0;
+}
+
+.edit-list-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.edit-list-input[readonly] {
+    background-color: #f9fafb;
+    color: #6b7280;
+    cursor: not-allowed;
+}
+
+.edit-list-input:required + .edit-list-label::after {
+    content: " *";
+    color: var(--danger);
+}
+
+/* Preview styles */
+.preview-card {
+    display: flex;
+    gap: 15px;
+    align-items: flex-start;
+}
+
+.preview-image {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    font-size: 24px;
+}
+
+.preview-details {
+    flex: 1;
+}
+
+.preview-title {
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 5px;
+    font-size: 15px;
+}
+
+.preview-meta {
+    font-size: 13px;
+    color: #6b7280;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.preview-price {
+    color: var(--success);
+    font-weight: bold;
+    font-size: 16px;
+    margin-top: 5px;
+}
+
+.preview-badge {
+    display: inline-block;
+    background: #e0f2fe;
+    color: #0369a1;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    margin-top: 8px;
+    font-weight: 600;
+}
+
+/* Validation styles */
+.edit-list-input.invalid {
+    border-color: var(--danger);
+    background-color: #fef2f2;
+}
+
+.validation-error {
+    color: var(--danger);
+    font-size: 12px;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    animation: fadeIn 0.3s ease;
+}
+
+/* LOADING */
 .loading {
     display: inline-block;
     width: 20px;
@@ -1090,6 +1201,32 @@ body {
     .btn {
         padding: 12px;
         font-size: 15px;
+    }
+    
+    /* Edit list modal responsive */
+    .edit-list-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 12px 0;
+    }
+    
+    .edit-list-label {
+        width: 100%;
+        margin-bottom: 5px;
+    }
+    
+    .edit-list-input {
+        width: 100%;
+    }
+    
+    .modal-footer {
+        flex-wrap: wrap;
+    }
+    
+    .modal-footer button {
+        flex: 1;
+        min-width: 120px;
     }
 }
 
