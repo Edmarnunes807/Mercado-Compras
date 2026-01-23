@@ -14,6 +14,7 @@ let historico = [];
 let todosProdutos = [];
 let paginaAtual = 1;
 let itensPorPagina = 10;
+let editListProductData = null;
 
 const REAR_CAMERA_KEYWORDS = ["back", "rear", "environment", "traseira", "camera 0"];
 
@@ -23,69 +24,45 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.key === 'Enter') searchManual();
     });
     
-    // Configurar botão de salvar no modal
+    // Configurar botão de salvar no modal antigo
     document.getElementById('saveEditBtn').onclick = saveEditedProduct;
+    
+    // Event listeners para o novo modal
+    document.getElementById('editListPreco')?.addEventListener('blur', function() {
+        if (this.value.trim()) {
+            this.value = formatPriceForDisplay(this.value);
+        }
+    });
+    
+    document.getElementById('editListEan')?.addEventListener('input', function() {
+        this.value = this.value.replace(/\D/g, '');
+    });
+    
+    document.getElementById('editListForm')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('btnSaveList').click();
+        }
+    });
+    
+    // Fechar modais com ESC
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            if (document.getElementById('editListModal').classList.contains('active')) {
+                closeEditListModal();
+            }
+            if (document.getElementById('editModal').classList.contains('active')) {
+                closeModal();
+            }
+            if (document.getElementById('carrinhoModal').classList.contains('active')) {
+                fecharCarrinhoModal();
+            }
+        }
+    });
     
     // Verificar status da API
     checkAPIStatus();
-    
-    // Carregar carrinho do localStorage
-    loadCartFromLocalStorage();
-    
-    // Atualizar badge do carrinho
-    updateCartBadge();
 });
-
-// ========== LOCALSTORAGE FUNCTIONS ==========
-function saveCartToLocalStorage() {
-    try {
-        localStorage.setItem('scanner_cart', JSON.stringify(carrinho));
-        localStorage.setItem('scanner_cart_timestamp', Date.now().toString());
-        console.log('Carrinho salvo no localStorage:', carrinho.length, 'itens');
-        updateCartBadge();
-    } catch (error) {
-        console.error('Erro ao salvar carrinho no localStorage:', error);
-    }
-}
-
-function loadCartFromLocalStorage() {
-    try {
-        const cartData = localStorage.getItem('scanner_cart');
-        if (cartData) {
-            carrinho = JSON.parse(cartData);
-            console.log('Carrinho carregado do localStorage:', carrinho.length, 'itens');
-            updateCartBadge();
-            return true;
-        }
-    } catch (error) {
-        console.error('Erro ao carregar carrinho do localStorage:', error);
-        carrinho = [];
-    }
-    return false;
-}
-
-function clearCartLocalStorage() {
-    try {
-        localStorage.removeItem('scanner_cart');
-        localStorage.removeItem('scanner_cart_timestamp');
-        console.log('Carrinho removido do localStorage');
-        updateCartBadge();
-    } catch (error) {
-        console.error('Erro ao limpar localStorage:', error);
-    }
-}
-
-function updateCartBadge() {
-    const cartBadge = document.getElementById('cartBadge');
-    if (cartBadge) {
-        if (carrinho.length > 0) {
-            cartBadge.textContent = carrinho.length;
-            cartBadge.classList.remove('hidden');
-        } else {
-            cartBadge.classList.add('hidden');
-        }
-    }
-}
 
 // ========== FUNÇÕES DO SCANNER ==========
 async function initScanner() {
@@ -591,63 +568,56 @@ async function searchBluesoftCosmos(code) {
     }
 }
 
-// ========== SISTEMA DE COMPRAS (LOCALSTORAGE) ==========
+// ========== SISTEMA DE COMPRAS ==========
 async function adicionarAoCarrinho(produto, precoAtual, precoAntigo) {
     try {
-        const precoAtualNum = parseFloat(precoAtual) || 0;
-        const precoAntigoNum = parseFloat(precoAntigo) || precoAtualNum;
-        const variacao = precoAtualNum - precoAntigoNum;
-        
-        const itemCarrinho = {
+        const params = new URLSearchParams({
+            operation: 'addToCart',
             ean: produto.ean,
-            nome: produto.nome || 'Produto não identificado',
-            marca: produto.marca || '',
-            imagem: produto.imagem || '',
-            preco_atual: precoAtualNum,
-            preco_antigo: precoAntigoNum,
-            variacao: variacao,
-            data_adicao: new Date().toISOString(),
-            fonte: produto.fonte || 'local'
-        };
+            preco_atual: precoAtual,
+            preco_antigo: precoAntigo || produto.preco_antigo || produto.preco || '0'
+        });
         
-        // Verificar se item já existe no carrinho
-        const indexExistente = carrinho.findIndex(item => item.ean === produto.ean);
+        const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
+        const response = await fetch(url);
         
-        if (indexExistente >= 0) {
-            // Atualizar item existente
-            carrinho[indexExistente] = itemCarrinho;
-            updateStatus('✅ Item atualizado no carrinho!', 'success');
-        } else {
-            // Adicionar novo item
-            carrinho.push(itemCarrinho);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
             updateStatus('✅ Adicionado ao carrinho!', 'success');
+            carregarCarrinho();
+            return result;
+        } else {
+            throw new Error(result.message || 'Erro ao adicionar ao carrinho');
         }
-        
-        // Salvar no localStorage
-        saveCartToLocalStorage();
-        
-        // Atualizar interface
-        atualizarInterfaceCarrinho();
-        
-        return { success: true, item: itemCarrinho };
-        
     } catch (error) {
         console.error('Erro ao adicionar ao carrinho:', error);
         updateStatus('❌ Erro ao adicionar ao carrinho', 'error');
-        return { success: false, error: error.message };
+        return null;
     }
 }
 
 async function carregarCarrinho() {
-    // Carregar do localStorage
-    loadCartFromLocalStorage();
-    atualizarInterfaceCarrinho();
-    
-    return { 
-        success: true, 
-        items: carrinho,
-        total: carrinho.length
-    };
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=getCart`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            carrinho = result.items || [];
+            atualizarInterfaceCarrinho();
+            return result;
+        }
+        return { success: false };
+    } catch (error) {
+        console.error('Erro ao carregar carrinho:', error);
+        return { success: false, error: error.message };
+    }
 }
 
 async function limparCarrinho() {
@@ -657,10 +627,23 @@ async function limparCarrinho() {
         return;
     }
     
-    carrinho = [];
-    clearCartLocalStorage();
-    atualizarInterfaceCarrinho();
-    updateStatus('✅ Carrinho esvaziado!', 'success');
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=clearCart`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            updateStatus('✅ Carrinho esvaziado!', 'success');
+            carrinho = [];
+            atualizarInterfaceCarrinho();
+        }
+    } catch (error) {
+        console.error('Erro ao limpar carrinho:', error);
+        updateStatus('❌ Erro ao limpar carrinho', 'error');
+    }
 }
 
 async function finalizarCompra() {
@@ -669,30 +652,25 @@ async function finalizarCompra() {
         return;
     }
     
-    const total = carrinho.reduce((sum, item) => sum + (item.preco_atual || 0), 0);
-    const precoAntigoTotal = carrinho.reduce((sum, item) => sum + (item.preco_antigo || 0), 0);
-    const economia = precoAntigoTotal - total;
+    const total = carrinho.reduce((sum, item) => sum + (parseFloat(item.preco_atual) || 0), 0);
     
     if (!confirm(`Finalizar compra com ${carrinho.length} itens por R$ ${total.toFixed(2)}?`)) {
         return;
     }
     
     try {
-        updateStatus('Finalizando compra...', 'scanning');
+        const url = `${GOOGLE_SHEETS_API}?operation=checkout`;
+        const response = await fetch(url);
         
-        // Enviar compra para histórico no Google Sheets
-        const result = await enviarCompraParaHistorico(carrinho);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
         
         if (result.success) {
-            updateStatus(`✅ Compra finalizada! ${carrinho.length} itens`, 'success');
-            showAlert(`Compra realizada com sucesso!\n\nTotal: R$ ${total.toFixed(2)}\nEconomia: R$ ${economia.toFixed(2)}`, 'success');
-            
-            // Limpar carrinho
+            updateStatus(`✅ Compra finalizada! ${result.resumo.total_itens} itens`, 'success');
+            showAlert(`Compra realizada com sucesso!\n\nTotal: R$ ${result.resumo.total_valor}\nEconomia: R$ ${result.resumo.economia || '0.00'}`, 'success');
             carrinho = [];
-            clearCartLocalStorage();
             atualizarInterfaceCarrinho();
-            
-            // Atualizar histórico e estatísticas
             carregarHistorico();
             carregarEstatisticas();
         } else {
@@ -704,74 +682,23 @@ async function finalizarCompra() {
     }
 }
 
-async function enviarCompraParaHistorico(itensCarrinho) {
-    try {
-        // Preparar dados para envio
-        const dadosCompra = {
-            itens: itensCarrinho,
-            total_itens: itensCarrinho.length,
-            total_valor: itensCarrinho.reduce((sum, item) => sum + item.preco_atual, 0),
-            data_compra: new Date().toISOString()
-        };
-        
-        // Enviar para API
-        const params = new URLSearchParams({
-            operation: 'checkout',
-            dados: JSON.stringify(dadosCompra)
-        });
-        
-        const response = await fetch(`${GOOGLE_SHEETS_API}?${params.toString()}`);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        
-        return await response.json();
-        
-    } catch (error) {
-        console.error('Erro ao enviar compra para histórico:', error);
-        return { success: false, error: error.message };
-    }
-}
-
 async function removerDoCarrinho(ean) {
-    const index = carrinho.findIndex(item => item.ean === ean);
-    
-    if (index >= 0) {
-        carrinho.splice(index, 1);
-        saveCartToLocalStorage();
-        updateStatus('✅ Item removido do carrinho', 'success');
-        atualizarInterfaceCarrinho();
+    try {
+        const url = `${GOOGLE_SHEETS_API}?operation=removeFromCart&ean=${ean}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            updateStatus('✅ Item removido do carrinho', 'success');
+            carregarCarrinho();
+        }
+    } catch (error) {
+        console.error('Erro ao remover do carrinho:', error);
+        updateStatus('❌ Erro ao remover item', 'error');
     }
-}
-
-function exportarCarrinho() {
-    if (!carrinho.length) {
-        showAlert('O carrinho está vazio!', 'warning');
-        return;
-    }
-    
-    const dadosExportacao = {
-        carrinho: carrinho,
-        total_itens: carrinho.length,
-        total_valor: carrinho.reduce((sum, item) => sum + item.preco_atual, 0),
-        data_exportacao: new Date().toISOString(),
-        origem: 'Scanner System'
-    };
-    
-    const dadosStr = JSON.stringify(dadosExportacao, null, 2);
-    const blob = new Blob([dadosStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `carrinho_${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    updateStatus('✅ Carrinho exportado como JSON', 'success');
 }
 
 // ========== HISTÓRICO ==========
@@ -1026,9 +953,6 @@ function showExternalProductInfo(product, code, source) {
             <button class="btn btn-success" onclick="saveExternalProductToDatabase('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
                 💾 Salvar no Banco
             </button>
-            <button class="btn btn-warning" onclick="editExternalProduct('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
-                ✏️ Editar antes de Salvar
-            </button>
             <button class="btn" onclick="searchOnline('${code}', '${encodeURIComponent(product.name)}')">
                 🌐 Pesquisar Online
             </button>
@@ -1104,11 +1028,6 @@ function atualizarInterfaceCarrinho() {
     
     if (!carrinhoItens) return;
     
-    // Atualizar contador
-    if (carrinhoCount) {
-        carrinhoCount.textContent = `${carrinho.length} ${carrinho.length === 1 ? 'item' : 'itens'}`;
-    }
-    
     if (carrinho.length === 0) {
         carrinhoItens.innerHTML = `
             <div class="no-results">
@@ -1117,6 +1036,7 @@ function atualizarInterfaceCarrinho() {
                 <p>Adicione produtos ao carrinho para começar</p>
             </div>
         `;
+        if (carrinhoCount) carrinhoCount.textContent = '0 itens';
         if (carrinhoTotal) carrinhoTotal.textContent = 'R$ 0,00';
         return;
     }
@@ -1126,8 +1046,12 @@ function atualizarInterfaceCarrinho() {
     let precoAntigoTotal = 0;
     
     carrinho.forEach(item => {
-        total += item.preco_atual || 0;
-        precoAntigoTotal += item.preco_antigo || 0;
+        const precoAtual = parseFloat(item.preco_atual) || 0;
+        const precoAntigo = parseFloat(item.preco_antigo) || 0;
+        const variacao = item.variacao || precoAtual - precoAntigo;
+        
+        total += precoAtual;
+        precoAntigoTotal += precoAntigo;
         
         html += `
             <div class="carrinho-item">
@@ -1136,11 +1060,11 @@ function atualizarInterfaceCarrinho() {
                     <small>${item.ean}</small>
                 </div>
                 <div class="carrinho-item-precos">
-                    ${item.preco_antigo > 0 ? `<div class="preco-antigo">R$ ${item.preco_antigo.toFixed(2)}</div>` : ''}
-                    <div class="preco-atual">R$ ${item.preco_atual.toFixed(2)}</div>
-                    ${item.variacao != 0 ? `
-                    <div class="variacao ${item.variacao < 0 ? 'negativa' : 'positiva'}">
-                        ${item.variacao < 0 ? '▼' : '▲'} R$ ${Math.abs(item.variacao).toFixed(2)}
+                    ${precoAntigo > 0 ? `<div class="preco-antigo">R$ ${precoAntigo.toFixed(2)}</div>` : ''}
+                    <div class="preco-atual">R$ ${precoAtual.toFixed(2)}</div>
+                    ${variacao != 0 ? `
+                    <div class="variacao ${variacao < 0 ? 'negativa' : 'positiva'}">
+                        ${variacao < 0 ? '▼' : '▲'} R$ ${Math.abs(variacao).toFixed(2)}
                     </div>
                     ` : ''}
                     <button class="btn btn-small btn-danger" onclick="removerDoCarrinho('${item.ean}')">
@@ -1152,6 +1076,10 @@ function atualizarInterfaceCarrinho() {
     });
     
     carrinhoItens.innerHTML = html;
+    
+    if (carrinhoCount) {
+        carrinhoCount.textContent = `${carrinho.length} ${carrinho.length === 1 ? 'item' : 'itens'}`;
+    }
     
     if (carrinhoTotal) {
         carrinhoTotal.textContent = `R$ ${total.toFixed(2)}`;
@@ -1180,7 +1108,7 @@ function atualizarInterfaceHistorico() {
             <div class="no-results">
                 <div class="no-results-icon">📊</div>
                 <h3>Nenhum histórico de compras</h3>
-                <p>Finalize uma compra para começar o histórico</p>
+                <p>Finalize uma compra para começaro histórico</p>
             </div>
         `;
         return;
@@ -1301,7 +1229,7 @@ function atualizarInterfaceEstatisticas(estatisticas) {
             
             <div class="stat-card">
                 <div class="label">Itens no Carrinho</div>
-                <div class="value">${carrinho.length}</div>
+                <div class="value">${estatisticas.carrinho || 0}</div>
             </div>
             
             <div class="stat-card">
@@ -1375,32 +1303,37 @@ function switchTab(tab) {
     }
 }
 
-// ========== MODAL FUNCTIONS ==========
+// ========== MODAL FUNCTIONS (LEGADO) ==========
 function openEditModal(ean, nome, marca, imagem, preco, linha) {
-    currentProduct = { ean, linha };
+    // Usar o novo modal de edição em lista
+    const productData = {
+        ean: ean,
+        nome: decodeURIComponent(nome),
+        marca: decodeURIComponent(marca),
+        imagem: decodeURIComponent(imagem),
+        preco: decodeURIComponent(preco),
+        fonte: 'Editado',
+        linha: linha || null
+    };
     
-    document.getElementById('editNome').value = decodeURIComponent(nome);
-    document.getElementById('editMarca').value = decodeURIComponent(marca);
-    document.getElementById('editImagem').value = decodeURIComponent(imagem);
-    document.getElementById('editPreco').value = decodeURIComponent(preco);
-    
-    document.getElementById('editModal').classList.add('active');
+    openEditListModal(productData, false);
 }
 
 function openManualAddModal(code) {
-    currentProduct = { ean: code };
+    const productData = {
+        ean: code,
+        nome: '',
+        marca: '',
+        imagem: '',
+        preco: '',
+        fonte: 'Manual'
+    };
     
-    document.getElementById('editNome').value = '';
-    document.getElementById('editMarca').value = '';
-    document.getElementById('editImagem').value = '';
-    document.getElementById('editPreco').value = '';
-    
-    document.getElementById('editModal').classList.add('active');
+    openEditListModal(productData, true);
 }
 
 function closeModal() {
     document.getElementById('editModal').classList.remove('active');
-    document.getElementById('carrinhoModal').classList.remove('active');
     currentProduct = null;
 }
 
@@ -1447,17 +1380,6 @@ async function saveEditedProduct() {
 }
 
 function editExternalProduct(code, name, brand, image, price, source) {
-    currentProduct = { ean: code, source };
-    
-    document.getElementById('editNome').value = decodeURIComponent(name);
-    document.getElementById('editMarca').value = decodeURIComponent(brand);
-    document.getElementById('editImagem').value = decodeURIComponent(image);
-    document.getElementById('editPreco').value = decodeURIComponent(price);
-    
-    document.getElementById('editModal').classList.add('active');
-}
-
-async function saveExternalProductToDatabase(code, name, brand, image, price, source) {
     const productData = {
         ean: code,
         nome: decodeURIComponent(name),
@@ -1467,16 +1389,254 @@ async function saveExternalProductToDatabase(code, name, brand, image, price, so
         fonte: source
     };
     
-    updateStatus('Salvando no banco local...', 'scanning');
+    openEditListModal(productData, true);
+}
+
+async function saveExternalProductToDatabase(code, name, brand, image, price, source) {
+    // Usar o novo modal de edição em lista
+    const productData = {
+        ean: code,
+        nome: decodeURIComponent(name),
+        marca: decodeURIComponent(brand),
+        imagem: decodeURIComponent(image),
+        preco: decodeURIComponent(price),
+        fonte: source
+    };
     
-    const result = await saveToGoogleSheets(productData);
+    openEditListModal(productData, true);
+}
+
+// ========== NOVAS FUNÇÕES DO MODAL DE EDIÇÃO EM LISTA ==========
+function openEditListModal(productData, isNewProduct = true) {
+    editListProductData = productData;
     
-    if (result.success) {
-        updateStatus('✅ Produto salvo no banco local!', 'success');
-        setTimeout(() => searchProduct(code), 1000);
-        carregarTodosProdutos();
+    // Preencher os campos do formulário
+    document.getElementById('editListEan').value = productData.ean || '';
+    document.getElementById('editListNome').value = productData.nome || '';
+    document.getElementById('editListMarca').value = productData.marca || '';
+    document.getElementById('editListImagem').value = productData.imagem || '';
+    document.getElementById('editListPreco').value = productData.preco || '';
+    document.getElementById('editListFonte').value = productData.fonte || 'Manual';
+    
+    // Resetar preview
+    document.getElementById('editListPreview').style.display = 'none';
+    document.getElementById('btnPreview').style.display = 'flex';
+    document.getElementById('btnSaveList').style.display = 'flex';
+    
+    // Limpar erros
+    clearValidationErrors();
+    
+    // Mostrar modal
+    document.getElementById('editListModal').classList.add('active');
+    
+    // Focar no primeiro campo editável
+    setTimeout(() => {
+        document.getElementById('editListNome').focus();
+        document.getElementById('editListNome').select();
+    }, 100);
+}
+
+function closeEditListModal() {
+    document.getElementById('editListModal').classList.remove('active');
+    editListProductData = null;
+    clearValidationErrors();
+}
+
+function clearValidationErrors() {
+    document.querySelectorAll('.edit-list-input.invalid').forEach(input => {
+        input.classList.remove('invalid');
+    });
+    document.querySelectorAll('.validation-error').forEach(error => {
+        error.remove();
+    });
+}
+
+function validateEditListForm() {
+    clearValidationErrors();
+    let isValid = true;
+    
+    const fields = [
+        { id: 'editListNome', name: 'Nome do Produto', required: true },
+        { id: 'editListPreco', name: 'Preço', required: true }
+    ];
+    
+    fields.forEach(field => {
+        const input = document.getElementById(field.id);
+        const value = input.value.trim();
+        
+        if (field.required && !value) {
+            markFieldInvalid(input, `${field.name} é obrigatório`);
+            isValid = false;
+        } else if (field.id === 'editListPreco') {
+            const pricePattern = /^\d+([.,]\d{1,2})?$/;
+            if (!pricePattern.test(value.replace('R$', '').trim())) {
+                markFieldInvalid(input, 'Formato de preço inválido. Use: 18,90 ou 18.90');
+                isValid = false;
+            }
+        }
+    });
+    
+    // Validar URL se fornecida
+    const urlInput = document.getElementById('editListImagem');
+    const url = urlInput.value.trim();
+    if (url) {
+        try {
+            new URL(url);
+        } catch {
+            markFieldInvalid(urlInput, 'URL inválida');
+            isValid = false;
+        }
+    }
+    
+    return isValid;
+}
+
+function markFieldInvalid(input, message) {
+    input.classList.add('invalid');
+    
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'validation-error';
+    errorDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
+    
+    input.parentNode.appendChild(errorDiv);
+}
+
+function formatPriceForDisplay(price) {
+    if (!price) return '0,00';
+    
+    // Remove R$, espaços e converte ponto para vírgula
+    let formatted = price.toString()
+        .replace('R$', '')
+        .trim()
+        .replace('.', ',');
+    
+    // Garante que tem duas casas decimais
+    if (!formatted.includes(',')) {
+        formatted += ',00';
     } else {
-        updateStatus(`❌ Erro ao salvar: ${result.error || result.message}`, 'error');
+        const parts = formatted.split(',');
+        if (parts[1].length === 1) parts[1] += '0';
+        if (parts[1].length > 2) parts[1] = parts[1].substring(0, 2);
+        formatted = parts.join(',');
+    }
+    
+    return formatted;
+}
+
+function showPreview() {
+    if (!validateEditListForm()) {
+        return;
+    }
+    
+    const product = {
+        ean: document.getElementById('editListEan').value,
+        nome: document.getElementById('editListNome').value,
+        marca: document.getElementById('editListMarca').value,
+        imagem: document.getElementById('editListImagem').value,
+        preco: formatPriceForDisplay(document.getElementById('editListPreco').value),
+        fonte: document.getElementById('editListFonte').value
+    };
+    
+    let imageHtml = '';
+    if (product.imagem) {
+        imageHtml = `
+            <img src="${product.imagem}" 
+                 class="preview-image" 
+                 alt="${product.nome}"
+                 onerror="this.onerror=null; this.src=''; this.style.color='#9ca3af'; this.innerHTML='📷';">
+        `;
+    } else {
+        imageHtml = `
+            <div class="preview-image">📷</div>
+        `;
+    }
+    
+    const previewHTML = `
+        <div class="preview-card">
+            ${imageHtml}
+            <div class="preview-details">
+                <div class="preview-title">${product.nome}</div>
+                <div class="preview-meta">
+                    <div><strong>EAN:</strong> ${product.ean}</div>
+                    ${product.marca ? `<div><strong>Marca:</strong> ${product.marca}</div>` : ''}
+                    <div class="preview-price">R$ ${product.preco}</div>
+                </div>
+                <div class="preview-badge">${product.fonte}</div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('previewContent').innerHTML = previewHTML;
+    document.getElementById('editListPreview').style.display = 'block';
+    
+    // Rolar para a preview
+    document.getElementById('editListPreview').scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'nearest' 
+    });
+}
+
+async function saveEditList() {
+    if (!validateEditListForm()) {
+        showAlert('Por favor, corrija os erros no formulário', 'warning');
+        return;
+    }
+    
+    const productData = {
+        ean: document.getElementById('editListEan').value,
+        nome: document.getElementById('editListNome').value,
+        marca: document.getElementById('editListMarca').value,
+        imagem: document.getElementById('editListImagem').value,
+        preco: formatPriceForDisplay(document.getElementById('editListPreco').value),
+        fonte: document.getElementById('editListFonte').value,
+        linha: editListProductData?.linha || null
+    };
+    
+    // Mostrar loading
+    const saveBtn = document.getElementById('btnSaveList');
+    const originalText = saveBtn.innerHTML;
+    saveBtn.innerHTML = '<div class="save-loading"><div class="loading"></div> Salvando...</div>';
+    saveBtn.disabled = true;
+    
+    updateStatus('Salvando no banco de dados...', 'scanning');
+    
+    try {
+        let result;
+        
+        if (productData.linha) {
+            // Produto existente - atualizar
+            result = await updateInGoogleSheets(productData);
+        } else {
+            // Novo produto - salvar
+            result = await saveToGoogleSheets(productData);
+        }
+        
+        if (result.success) {
+            updateStatus('✅ Produto salvo com sucesso!', 'success');
+            
+            // Fechar modal
+            closeEditListModal();
+            
+            // Atualizar a tela com o produto
+            setTimeout(() => {
+                searchProduct(productData.ean);
+            }, 500);
+            
+            // Atualizar lista de produtos
+            carregarTodosProdutos();
+            
+            showAlert(`Produto ${productData.linha ? 'atualizado' : 'cadastrado'} com sucesso!`, 'success');
+        } else {
+            throw new Error(result.error || result.message || 'Erro desconhecido');
+        }
+    } catch (error) {
+        console.error('Erro ao salvar produto:', error);
+        updateStatus('❌ Erro ao salvar: ' + error.message, 'error');
+        showAlert('Erro ao salvar produto: ' + error.message, 'error');
+    } finally {
+        // Restaurar botão
+        saveBtn.innerHTML = originalText;
+        saveBtn.disabled = false;
     }
 }
 
@@ -1515,8 +1675,8 @@ async function confirmarAdicionarCarrinho() {
     const produtoData = {
         ean: currentProduct.ean,
         nome: currentProduct.nome,
-        preco_atual: parseFloat(precoAtual),
-        preco_antigo: parseFloat(precoAntigo) || parseFloat(precoAtual)
+        preco_atual: precoAtual,
+        preco_antigo: precoAntigo || precoAtual
     };
     
     const result = await adicionarAoCarrinho(produtoData, precoAtual, precoAntigo || precoAtual);
@@ -1643,4 +1803,9 @@ window.fecharCarrinhoModal = fecharCarrinhoModal;
 window.confirmarAdicionarCarrinho = confirmarAdicionarCarrinho;
 window.removerDoCarrinho = removerDoCarrinho;
 window.carregarEstatisticas = carregarEstatisticas;
-window.exportarCarrinho = exportarCarrinho;
+
+// Novas funções do modal de edição em lista
+window.openEditListModal = openEditListModal;
+window.closeEditListModal = closeEditListModal;
+window.showPreview = showPreview;
+window.saveEditList = saveEditList;
