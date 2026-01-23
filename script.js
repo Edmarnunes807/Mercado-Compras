@@ -27,34 +27,49 @@ document.addEventListener('DOMContentLoaded', function() {
     // Configurar botão de salvar no modal antigo
     document.getElementById('saveEditBtn').onclick = saveEditedProduct;
     
-    // Event listeners para o novo modal
-    document.getElementById('editListPreco')?.addEventListener('blur', function() {
-        if (this.value.trim()) {
-            this.value = formatPriceForDisplay(this.value);
-        }
-    });
+    // Configurar eventos do novo modal de edição em lista
+    const editListPreco = document.getElementById('editListPreco');
+    const editListEan = document.getElementById('editListEan');
+    const editListForm = document.getElementById('editListForm');
     
-    document.getElementById('editListEan')?.addEventListener('input', function() {
-        this.value = this.value.replace(/\D/g, '');
-    });
+    if (editListPreco) {
+        editListPreco.addEventListener('blur', function() {
+            if (this.value.trim()) {
+                this.value = formatPriceForDisplay(this.value);
+            }
+        });
+    }
     
-    document.getElementById('editListForm')?.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            document.getElementById('btnSaveList').click();
-        }
-    });
+    if (editListEan) {
+        editListEan.addEventListener('input', function() {
+            this.value = this.value.replace(/\D/g, '');
+        });
+    }
+    
+    if (editListForm) {
+        editListForm.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                document.getElementById('btnSaveList').click();
+            }
+        });
+    }
     
     // Fechar modais com ESC
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            if (document.getElementById('editListModal').classList.contains('active')) {
+            const editListModal = document.getElementById('editListModal');
+            if (editListModal && editListModal.classList.contains('active')) {
                 closeEditListModal();
             }
-            if (document.getElementById('editModal').classList.contains('active')) {
+            
+            const editModal = document.getElementById('editModal');
+            if (editModal && editModal.classList.contains('active')) {
                 closeModal();
             }
-            if (document.getElementById('carrinhoModal').classList.contains('active')) {
+            
+            const carrinhoModal = document.getElementById('carrinhoModal');
+            if (carrinhoModal && carrinhoModal.classList.contains('active')) {
                 fecharCarrinhoModal();
             }
         }
@@ -876,7 +891,7 @@ function showProductInfo(product, isFromDatabase = true) {
                 🗑️ Excluir
             </button>
             ` : `
-            <button class="btn btn-success" onclick="saveExternalProductToDatabase('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', 'Banco Local')">
+            <button class="btn btn-success" onclick="openExternalProductModal('${product.ean}', '${encodeURIComponent(product.nome)}', '${encodeURIComponent(product.marca || '')}', '${encodeURIComponent(product.imagem || '')}', '${encodeURIComponent(product.preco || '')}', 'Banco Local')">
                 💾 Salvar no Banco
             </button>
             `}
@@ -950,7 +965,7 @@ function showExternalProductInfo(product, code, source) {
         </div>
         
         <div class="api-actions">
-            <button class="btn btn-success" onclick="saveExternalProductToDatabase('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
+            <button class="btn btn-success" onclick="openExternalProductModal('${code}', '${encodeURIComponent(product.name)}', '${encodeURIComponent(product.brand || '')}', '${encodeURIComponent(product.image || '')}', '${encodeURIComponent(product.price || '')}', '${source}')">
                 💾 Salvar no Banco
             </button>
             <button class="btn" onclick="searchOnline('${code}', '${encodeURIComponent(product.name)}')">
@@ -1108,7 +1123,7 @@ function atualizarInterfaceHistorico() {
             <div class="no-results">
                 <div class="no-results-icon">📊</div>
                 <h3>Nenhum histórico de compras</h3>
-                <p>Finalize uma compra para começaro histórico</p>
+                <p>Finalize uma compra para começar o histórico</p>
             </div>
         `;
         return;
@@ -1303,9 +1318,273 @@ function switchTab(tab) {
     }
 }
 
+// ========== NOVAS FUNÇÕES DO MODAL DE EDIÇÃO EM LISTA ==========
+
+function openExternalProductModal(code, name, brand, image, price, source) {
+    const productData = {
+        ean: code,
+        nome: decodeURIComponent(name),
+        marca: decodeURIComponent(brand),
+        imagem: decodeURIComponent(image),
+        preco: decodeURIComponent(price),
+        fonte: source
+    };
+    
+    openEditListModal(productData, true);
+}
+
+function openEditListModal(productData, isNewProduct = true) {
+    editListProductData = productData;
+    
+    // Preencher os campos do formulário
+    document.getElementById('editListEan').value = productData.ean || '';
+    document.getElementById('editListNome').value = productData.nome || '';
+    document.getElementById('editListMarca').value = productData.marca || '';
+    document.getElementById('editListImagem').value = productData.imagem || '';
+    document.getElementById('editListPreco').value = productData.preco || '';
+    document.getElementById('editListFonte').value = productData.fonte || 'Manual';
+    
+    // Resetar preview
+    document.getElementById('editListPreview').style.display = 'none';
+    document.getElementById('btnPreview').style.display = 'flex';
+    document.getElementById('btnSaveList').style.display = 'flex';
+    
+    // Limpar erros
+    clearValidationErrors();
+    
+    // Mostrar modal
+    document.getElementById('editListModal').classList.add('active');
+    
+    // Focar no primeiro campo editável
+    setTimeout(() => {
+        document.getElementById('editListNome').focus();
+        document.getElementById('editListNome').select();
+    }, 100);
+}
+
+function closeEditListModal() {
+    document.getElementById('editListModal').classList.remove('active');
+    editListProductData = null;
+    clearValidationErrors();
+}
+
+function clearValidationErrors() {
+    document.querySelectorAll('.edit-list-input.invalid').forEach(input => {
+        input.classList.remove('invalid');
+    });
+    document.querySelectorAll('.validation-error').forEach(error => {
+        error.remove();
+    });
+}
+
+function formatPriceForDisplay(price) {
+    if (!price) return '0,00';
+    
+    // Remove R$, espaços e converte ponto para vírgula
+    let formatted = price.toString()
+        .replace('R$', '')
+        .trim()
+        .replace('.', ',');
+    
+    // Garante que tem duas casas decimais
+    if (!formatted.includes(',')) {
+        formatted += ',00';
+    } else {
+        const parts = formatted.split(',');
+        if (parts[1].length === 1) parts[1] += '0';
+        if (parts[1].length > 2) parts[1] = parts[1].substring(0, 2);
+        formatted = parts.join(',');
+    }
+    
+    return formatted;
+}
+
+function validateEditListForm() {
+    clearValidationErrors();
+    let isValid = true;
+    
+    const fields = [
+        { id: 'editListNome', name: 'Nome do Produto', required: true },
+        { id: 'editListPreco', name: 'Preço', required: true }
+    ];
+    
+    fields.forEach(field => {
+        const input = document.getElementById(field.id);
+        const value = input.value.trim();
+        
+        if (field.required && !value) {
+            markFieldInvalid(input, `${field.name} é obrigatório`);
+            isValid = false;
+        } else if (field.id === 'editListPreco') {
+            const pricePattern = /^\d+([.,]\d{1,2})?$/;
+            if (!pricePattern.test(value.replace('R$', '').trim())) {
+                markFieldInvalid(input, 'Formato de preço inválido. Use: 18,90 ou 18.90');
+                isValid = false;
+            }
+        }
+    });
+    
+    // Validar URL se fornecida
+    const urlInput = document.getElementById('editListImagem');
+    const url = urlInput.value.trim();
+    if (url) {
+        try {
+            new URL(url);
+        } catch {
+            markFieldInvalid(urlInput, 'URL inválida');
+            isValid = false;
+        }
+    }
+    
+    return isValid;
+}
+
+function markFieldInvalid(input, message) {
+    input.classList.add('invalid');
+    
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'validation-error';
+    errorDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
+    
+    input.parentNode.appendChild(errorDiv);
+}
+
+function showPreview() {
+    if (!validateEditListForm()) {
+        return;
+    }
+    
+    const product = {
+        ean: document.getElementById('editListEan').value,
+        nome: document.getElementById('editListNome').value,
+        marca: document.getElementById('editListMarca').value,
+        imagem: document.getElementById('editListImagem').value,
+        preco: formatPriceForDisplay(document.getElementById('editListPreco').value),
+        fonte: document.getElementById('editListFonte').value
+    };
+    
+    let imageHtml = '';
+    if (product.imagem) {
+        imageHtml = `
+            <img src="${product.imagem}" 
+                 class="preview-image" 
+                 alt="${product.nome}"
+                 onerror="this.onerror=null; this.src=''; this.style.color='#9ca3af'; this.innerHTML='📷';">
+        `;
+    } else {
+        imageHtml = `
+            <div class="preview-image">📷</div>
+        `;
+    }
+    
+    const previewHTML = `
+        <div class="preview-card">
+            ${imageHtml}
+            <div class="preview-details">
+                <div class="preview-title">${product.nome}</div>
+                <div class="preview-meta">
+                    <div><strong>EAN:</strong> ${product.ean}</div>
+                    ${product.marca ? `<div><strong>Marca:</strong> ${product.marca}</div>` : ''}
+                    <div class="preview-price">R$ ${product.preco}</div>
+                </div>
+                <div class="preview-badge">${product.fonte}</div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('previewContent').innerHTML = previewHTML;
+    document.getElementById('editListPreview').style.display = 'block';
+    
+    // Rolar para a preview
+    document.getElementById('editListPreview').scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'nearest' 
+    });
+}
+
+async function saveEditList() {
+    if (!validateEditListForm()) {
+        showAlert('Por favor, corrija os erros no formulário', 'warning');
+        return;
+    }
+    
+    const productData = {
+        ean: document.getElementById('editListEan').value,
+        nome: document.getElementById('editListNome').value,
+        marca: document.getElementById('editListMarca').value,
+        imagem: document.getElementById('editListImagem').value,
+        preco: formatPriceForDisplay(document.getElementById('editListPreco').value),
+        fonte: document.getElementById('editListFonte').value
+    };
+    
+    // Se for edição de produto existente
+    if (editListProductData && editListProductData.linha) {
+        productData.linha = editListProductData.linha;
+    }
+    
+    // Mostrar loading
+    const saveBtn = document.getElementById('btnSaveList');
+    const originalText = saveBtn.innerHTML;
+    saveBtn.innerHTML = '<div class="save-loading"><div class="loading"></div> Salvando...</div>';
+    saveBtn.disabled = true;
+    
+    updateStatus('Salvando no banco de dados...', 'scanning');
+    
+    try {
+        // Usar a operação "save" ou "update" da sua API
+        const operation = productData.linha ? 'update' : 'save';
+        const params = new URLSearchParams({
+            operation: operation,
+            ean: productData.ean,
+            nome: productData.nome,
+            marca: productData.marca,
+            imagem: productData.imagem,
+            preco: productData.preco,
+            fonte: productData.fonte
+        });
+        
+        if (productData.linha) {
+            params.append('linha', productData.linha);
+        }
+        
+        const url = `${GOOGLE_SHEETS_API}?${params.toString()}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            updateStatus('✅ Produto salvo com sucesso!', 'success');
+            
+            // Fechar modal
+            closeEditListModal();
+            
+            // Atualizar a tela com o produto
+            setTimeout(() => {
+                searchProduct(productData.ean);
+            }, 500);
+            
+            // Atualizar lista de produtos
+            carregarTodosProdutos();
+            
+            showAlert(`Produto ${result.action || 'salvo'} com sucesso!`, 'success');
+        } else {
+            throw new Error(result.message || result.error || 'Erro ao salvar produto');
+        }
+    } catch (error) {
+        console.error('Erro ao salvar produto:', error);
+        updateStatus('❌ Erro ao salvar: ' + error.message, 'error');
+        showAlert('Erro ao salvar produto: ' + error.message, 'error');
+    } finally {
+        // Restaurar botão
+        saveBtn.innerHTML = originalText;
+        saveBtn.disabled = false;
+    }
+}
+
 // ========== MODAL FUNCTIONS (LEGADO) ==========
 function openEditModal(ean, nome, marca, imagem, preco, linha) {
-    // Usar o novo modal de edição em lista
     const productData = {
         ean: ean,
         nome: decodeURIComponent(nome),
@@ -1376,267 +1655,6 @@ async function saveEditedProduct() {
         carregarTodosProdutos();
     } else {
         updateStatus(`❌ Erro ao salvar: ${result.error || result.message}`, 'error');
-    }
-}
-
-function editExternalProduct(code, name, brand, image, price, source) {
-    const productData = {
-        ean: code,
-        nome: decodeURIComponent(name),
-        marca: decodeURIComponent(brand),
-        imagem: decodeURIComponent(image),
-        preco: decodeURIComponent(price),
-        fonte: source
-    };
-    
-    openEditListModal(productData, true);
-}
-
-async function saveExternalProductToDatabase(code, name, brand, image, price, source) {
-    // Usar o novo modal de edição em lista
-    const productData = {
-        ean: code,
-        nome: decodeURIComponent(name),
-        marca: decodeURIComponent(brand),
-        imagem: decodeURIComponent(image),
-        preco: decodeURIComponent(price),
-        fonte: source
-    };
-    
-    openEditListModal(productData, true);
-}
-
-// ========== NOVAS FUNÇÕES DO MODAL DE EDIÇÃO EM LISTA ==========
-function openEditListModal(productData, isNewProduct = true) {
-    editListProductData = productData;
-    
-    // Preencher os campos do formulário
-    document.getElementById('editListEan').value = productData.ean || '';
-    document.getElementById('editListNome').value = productData.nome || '';
-    document.getElementById('editListMarca').value = productData.marca || '';
-    document.getElementById('editListImagem').value = productData.imagem || '';
-    document.getElementById('editListPreco').value = productData.preco || '';
-    document.getElementById('editListFonte').value = productData.fonte || 'Manual';
-    
-    // Resetar preview
-    document.getElementById('editListPreview').style.display = 'none';
-    document.getElementById('btnPreview').style.display = 'flex';
-    document.getElementById('btnSaveList').style.display = 'flex';
-    
-    // Limpar erros
-    clearValidationErrors();
-    
-    // Mostrar modal
-    document.getElementById('editListModal').classList.add('active');
-    
-    // Focar no primeiro campo editável
-    setTimeout(() => {
-        document.getElementById('editListNome').focus();
-        document.getElementById('editListNome').select();
-    }, 100);
-}
-
-function closeEditListModal() {
-    document.getElementById('editListModal').classList.remove('active');
-    editListProductData = null;
-    clearValidationErrors();
-}
-
-function clearValidationErrors() {
-    document.querySelectorAll('.edit-list-input.invalid').forEach(input => {
-        input.classList.remove('invalid');
-    });
-    document.querySelectorAll('.validation-error').forEach(error => {
-        error.remove();
-    });
-}
-
-function validateEditListForm() {
-    clearValidationErrors();
-    let isValid = true;
-    
-    const fields = [
-        { id: 'editListNome', name: 'Nome do Produto', required: true },
-        { id: 'editListPreco', name: 'Preço', required: true }
-    ];
-    
-    fields.forEach(field => {
-        const input = document.getElementById(field.id);
-        const value = input.value.trim();
-        
-        if (field.required && !value) {
-            markFieldInvalid(input, `${field.name} é obrigatório`);
-            isValid = false;
-        } else if (field.id === 'editListPreco') {
-            const pricePattern = /^\d+([.,]\d{1,2})?$/;
-            if (!pricePattern.test(value.replace('R$', '').trim())) {
-                markFieldInvalid(input, 'Formato de preço inválido. Use: 18,90 ou 18.90');
-                isValid = false;
-            }
-        }
-    });
-    
-    // Validar URL se fornecida
-    const urlInput = document.getElementById('editListImagem');
-    const url = urlInput.value.trim();
-    if (url) {
-        try {
-            new URL(url);
-        } catch {
-            markFieldInvalid(urlInput, 'URL inválida');
-            isValid = false;
-        }
-    }
-    
-    return isValid;
-}
-
-function markFieldInvalid(input, message) {
-    input.classList.add('invalid');
-    
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'validation-error';
-    errorDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
-    
-    input.parentNode.appendChild(errorDiv);
-}
-
-function formatPriceForDisplay(price) {
-    if (!price) return '0,00';
-    
-    // Remove R$, espaços e converte ponto para vírgula
-    let formatted = price.toString()
-        .replace('R$', '')
-        .trim()
-        .replace('.', ',');
-    
-    // Garante que tem duas casas decimais
-    if (!formatted.includes(',')) {
-        formatted += ',00';
-    } else {
-        const parts = formatted.split(',');
-        if (parts[1].length === 1) parts[1] += '0';
-        if (parts[1].length > 2) parts[1] = parts[1].substring(0, 2);
-        formatted = parts.join(',');
-    }
-    
-    return formatted;
-}
-
-function showPreview() {
-    if (!validateEditListForm()) {
-        return;
-    }
-    
-    const product = {
-        ean: document.getElementById('editListEan').value,
-        nome: document.getElementById('editListNome').value,
-        marca: document.getElementById('editListMarca').value,
-        imagem: document.getElementById('editListImagem').value,
-        preco: formatPriceForDisplay(document.getElementById('editListPreco').value),
-        fonte: document.getElementById('editListFonte').value
-    };
-    
-    let imageHtml = '';
-    if (product.imagem) {
-        imageHtml = `
-            <img src="${product.imagem}" 
-                 class="preview-image" 
-                 alt="${product.nome}"
-                 onerror="this.onerror=null; this.src=''; this.style.color='#9ca3af'; this.innerHTML='📷';">
-        `;
-    } else {
-        imageHtml = `
-            <div class="preview-image">📷</div>
-        `;
-    }
-    
-    const previewHTML = `
-        <div class="preview-card">
-            ${imageHtml}
-            <div class="preview-details">
-                <div class="preview-title">${product.nome}</div>
-                <div class="preview-meta">
-                    <div><strong>EAN:</strong> ${product.ean}</div>
-                    ${product.marca ? `<div><strong>Marca:</strong> ${product.marca}</div>` : ''}
-                    <div class="preview-price">R$ ${product.preco}</div>
-                </div>
-                <div class="preview-badge">${product.fonte}</div>
-            </div>
-        </div>
-    `;
-    
-    document.getElementById('previewContent').innerHTML = previewHTML;
-    document.getElementById('editListPreview').style.display = 'block';
-    
-    // Rolar para a preview
-    document.getElementById('editListPreview').scrollIntoView({ 
-        behavior: 'smooth', 
-        block: 'nearest' 
-    });
-}
-
-async function saveEditList() {
-    if (!validateEditListForm()) {
-        showAlert('Por favor, corrija os erros no formulário', 'warning');
-        return;
-    }
-    
-    const productData = {
-        ean: document.getElementById('editListEan').value,
-        nome: document.getElementById('editListNome').value,
-        marca: document.getElementById('editListMarca').value,
-        imagem: document.getElementById('editListImagem').value,
-        preco: formatPriceForDisplay(document.getElementById('editListPreco').value),
-        fonte: document.getElementById('editListFonte').value,
-        linha: editListProductData?.linha || null
-    };
-    
-    // Mostrar loading
-    const saveBtn = document.getElementById('btnSaveList');
-    const originalText = saveBtn.innerHTML;
-    saveBtn.innerHTML = '<div class="save-loading"><div class="loading"></div> Salvando...</div>';
-    saveBtn.disabled = true;
-    
-    updateStatus('Salvando no banco de dados...', 'scanning');
-    
-    try {
-        let result;
-        
-        if (productData.linha) {
-            // Produto existente - atualizar
-            result = await updateInGoogleSheets(productData);
-        } else {
-            // Novo produto - salvar
-            result = await saveToGoogleSheets(productData);
-        }
-        
-        if (result.success) {
-            updateStatus('✅ Produto salvo com sucesso!', 'success');
-            
-            // Fechar modal
-            closeEditListModal();
-            
-            // Atualizar a tela com o produto
-            setTimeout(() => {
-                searchProduct(productData.ean);
-            }, 500);
-            
-            // Atualizar lista de produtos
-            carregarTodosProdutos();
-            
-            showAlert(`Produto ${productData.linha ? 'atualizado' : 'cadastrado'} com sucesso!`, 'success');
-        } else {
-            throw new Error(result.error || result.message || 'Erro desconhecido');
-        }
-    } catch (error) {
-        console.error('Erro ao salvar produto:', error);
-        updateStatus('❌ Erro ao salvar: ' + error.message, 'error');
-        showAlert('Erro ao salvar produto: ' + error.message, 'error');
-    } finally {
-        // Restaurar botão
-        saveBtn.innerHTML = originalText;
-        saveBtn.disabled = false;
     }
 }
 
@@ -1786,8 +1804,6 @@ window.openManualAddModal = openManualAddModal;
 window.closeModal = closeModal;
 window.saveEditedProduct = saveEditedProduct;
 window.deleteProduct = deleteProduct;
-window.saveExternalProductToDatabase = saveExternalProductToDatabase;
-window.editExternalProduct = editExternalProduct;
 window.handleImageError = handleImageError;
 window.switchTab = switchTab;
 window.carregarCarrinho = carregarCarrinho;
@@ -1805,6 +1821,7 @@ window.removerDoCarrinho = removerDoCarrinho;
 window.carregarEstatisticas = carregarEstatisticas;
 
 // Novas funções do modal de edição em lista
+window.openExternalProductModal = openExternalProductModal;
 window.openEditListModal = openEditListModal;
 window.closeEditListModal = closeEditListModal;
 window.showPreview = showPreview;
