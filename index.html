@@ -12,7 +12,7 @@
     <div class="container">
         <div class="header">
             <h1><i class="fas fa-barcode"></i> Scanner + Compras</h1>
-            <p>EAN → Banco Local • Carrinho (LocalStorage) • Histórico • Estatísticas</p>
+            <p>EAN → Banco Local • Carrinho • Histórico • Estatísticas</p>
         </div>
         
         <div class="content">
@@ -65,7 +65,7 @@
                     <i class="fas fa-boxes"></i> Todos Produtos
                 </div>
                 <div class="tab" onclick="switchTab('compras')">
-                    <i class="fas fa-shopping-cart"></i> Carrinho <span id="cartBadge" class="cart-badge hidden">0</span>
+                    <i class="fas fa-shopping-cart"></i> Carrinho
                 </div>
                 <div class="tab" onclick="switchTab('historico')">
                     <i class="fas fa-history"></i> Histórico
@@ -108,10 +108,10 @@
                 </div>
             </div>
             
-            <!-- Carrinho de Compras (LocalStorage) -->
+            <!-- Carrinho de Compras -->
             <div id="comprasSection" class="tab-content hidden">
                 <div class="carrinho-header">
-                    <h3><i class="fas fa-shopping-cart"></i> Carrinho de Compras <small>(Armazenado Localmente)</small></h3>
+                    <h3><i class="fas fa-shopping-cart"></i> Carrinho de Compras</h3>
                     <div class="carrinho-stats">
                         <span id="carrinhoCount">0 itens</span>
                         <span id="carrinhoTotal">R$ 0,00</span>
@@ -128,9 +128,6 @@
                     </button>
                     <button class="btn btn-success" onclick="finalizarCompra()">
                         <i class="fas fa-check"></i> Finalizar Compra
-                    </button>
-                    <button class="btn btn-export" onclick="exportarCarrinho()">
-                        <i class="fas fa-download"></i> Exportar
                     </button>
                 </div>
             </div>
@@ -167,11 +164,11 @@
         </div>
         
         <div class="footer">
-            <p>Sistema Scanner • Carrinho LocalStorage • <span id="apiStatus">Conectado</span></p>
+            <p>Sistema Scanner • Google Sheets API • <span id="apiStatus">Conectado</span></p>
         </div>
     </div>
 
-    <!-- Modal para edição -->
+    <!-- Modal antigo para edição (mantido para compatibilidade) -->
     <div class="modal hidden" id="editModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -235,6 +232,91 @@
                 </button>
                 <button class="btn btn-success" onclick="confirmarAdicionarCarrinho()">
                     Adicionar ao Carrinho
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOVO: Modal para edição em lista (estilo WhatsApp) -->
+    <div class="modal hidden" id="editListModal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Confirmar e Editar Informações</h3>
+                <button class="btn-close" onclick="closeEditListModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 15px; padding: 10px; background: #f0f9ff; border-radius: var(--radius-sm);">
+                    <div style="font-size: 12px; color: #0369a1; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-info-circle"></i>
+                        <span>Revise e edite as informações antes de salvar no banco de dados</span>
+                    </div>
+                </div>
+                
+                <form id="editListForm">
+                    <div class="edit-list-group">
+                        <div class="edit-list-item">
+                            <div class="edit-list-label">EAN:</div>
+                            <input type="text" id="editListEan" class="edit-list-input" maxlength="13" required readonly
+                                   style="background: #f3f4f6;">
+                        </div>
+                        
+                        <div class="edit-list-item">
+                            <div class="edit-list-label">Nome do Produto:</div>
+                            <input type="text" id="editListNome" class="edit-list-input" required
+                                   placeholder="Digite o nome do produto">
+                        </div>
+                        
+                        <div class="edit-list-item">
+                            <div class="edit-list-label">Marca:</div>
+                            <input type="text" id="editListMarca" class="edit-list-input" 
+                                   placeholder="Digite a marca do produto">
+                        </div>
+                        
+                        <div class="edit-list-item">
+                            <div class="edit-list-label">URL da Imagem:</div>
+                            <input type="url" id="editListImagem" class="edit-list-input" 
+                                   placeholder="https://exemplo.com/imagem.jpg">
+                        </div>
+                        
+                        <div class="edit-list-item">
+                            <div class="edit-list-label">Preço (R$):</div>
+                            <input type="text" id="editListPreco" class="edit-list-input" 
+                                   placeholder="Ex: 18,90" required>
+                        </div>
+                        
+                        <div class="edit-list-item">
+                            <div class="edit-list-label">Fonte:</div>
+                            <select id="editListFonte" class="edit-list-input">
+                                <option value="Banco Local">Banco Local</option>
+                                <option value="Manual">Manual</option>
+                                <option value="Open Food Facts">Open Food Facts</option>
+                                <option value="Bluesoft">Bluesoft</option>
+                                <option value="Google">Google</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+                
+                <div id="editListPreview" style="margin-top: 20px; display: none;">
+                    <div style="font-weight: 600; color: #4b5563; margin-bottom: 10px;">
+                        <i class="fas fa-eye"></i> Prévia:
+                    </div>
+                    <div id="previewContent" style="background: #f9fafb; padding: 15px; border-radius: var(--radius-sm);">
+                        <!-- Preview aparecerá aqui -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeEditListModal()">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+                <button class="btn btn-primary" id="btnPreview" onclick="showPreview()">
+                    <i class="fas fa-eye"></i> Ver Prévia
+                </button>
+                <button class="btn btn-success" id="btnSaveList" onclick="saveEditList()">
+                    <i class="fas fa-save"></i> Salvar no Banco
                 </button>
             </div>
         </div>
